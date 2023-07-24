@@ -1,6 +1,6 @@
 # Classes to time evolve initial condition according to the Schrödinger equation
 import numpy as np
-from scipy.fft import fft2, ifft2, fftshift
+from scipy.fft import fft, ifft, fft2, ifft2, fftshift
 from scipy.linalg import expm, block_diag
 import scipy.sparse as sps
 
@@ -9,6 +9,8 @@ class PeriodicSim:
     Solver for periodic x & y boundary conditions using fft.
     Does not incorporate a potential yet. On the bright side, this
     makes the step method accurate for arbitrarily large time steps.
+    Or it would be if the solution didn't slowly move diagonally when
+    it should be in one place.
 
     Attributes
     ----------
@@ -129,3 +131,39 @@ class SparseDirSim:
     @psi.setter
     def psi(self, psi0):
         self._psi = psi0.flatten()
+
+class PeriodicSim1D:
+    """
+    1D time evolution according to the Schrödinger equation with the
+    fft method, giving periodic boundary conditions.
+    """
+    def __init__(self, psi0, startx, endx, xsamples):
+        self.dx = (endx - startx)/xsamples
+        k_0 = np.pi/self.dx
+        self.k_x = fftshift(np.linspace(-k_0, k_0, xsamples))
+        self.psi = psi0
+    def step(self, dt):
+        fy = fft(self.psi) * np.exp(-1.0j*self.k_x*self.k_x*dt/2)
+        self.psi = ifft(fy)
+    def eventimeevolution(self, t, tsamples):
+        dt = t/tsamples
+        for _ in range(tsamples):
+            self.step(dt)
+
+class DirSim1D:
+    """
+    1D time evolution according to the Schrödinger equation with infinite
+    walls, giving Dirichlet boundary conditions.
+    """
+    def __init__(self, psi0, dt, hamiltony, sparse=False):
+        self.psi = psi0
+        if sparse:
+            self.U = sp.linalg.expm(-1.0j*hamiltony*dt)
+        else:
+            self.U = expm(-1.0j*hamiltony*dt)
+        self.sparse = sparse
+    def step(self):
+        self.psi = self.U @ self.psi
+    def nstep(self, n):
+        for _ in range(n):
+            self.step()
