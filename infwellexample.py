@@ -32,4 +32,4 @@ def animate(frame):
 anim = animation.FuncAnimation(fig, animate, frames=600, blit=True)
 FFwriter = animation.FFMpegWriter(fps=30, metadata={'copyright': 'Public Domain'})
 
-anim.save('testing.mp4', writer=FFwriter)
+anim.save('infwelltest.mp4', writer=FFwriter)
