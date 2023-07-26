@@ -23,7 +23,7 @@ class PeriodicSim:
     :attribute float t: Time elapsed since start of emulation.
     Automatically managed.
     """
-    def __init__(self, psi0, startX, endX, startY, endY):
+    def __init__(self, psi0, startX, endX, startY, endY, m):
         """
         :param numpy.ndarray psi0: Initial wavefunction in R-basis.
         :param float startX: lowest x value
@@ -33,6 +33,7 @@ class PeriodicSim:
         """
         samplesX, samplesY = np.shape(psi0)
         self.psi = psi0
+        self.m = m
         dx = (endX - startX)/samplesX
         dy = (endY - startY)/samplesY
         k0x = np.pi/dx
@@ -47,8 +48,9 @@ class PeriodicSim:
     def step(self, dt):
         """Performs one step of time evolution with time step dt."""
         psik = fft2(self.psi)
-        psik = psik*np.exp(-0.5j * (self._kxv * self._kxv \
-                                    + self._kyv * self._kyv) * dt)
+        psik = psik*np.exp(-1.0j * (self._kxv * self._kxv \
+                                    + self._kyv * self._kyv) * dt\
+                           / (2 * self.m))
         self.psi = ifft2(psik)
         self.t += dt
 
