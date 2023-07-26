@@ -26,10 +26,10 @@ class PeriodicSim:
     def __init__(self, psi0, startX, endX, startY, endY):
         """
         :param numpy.ndarray psi0: Initial wavefunction in R-basis.
-        :param float startx: lowest x value
-        :param float starty: lowest y value
-        :param float endx: highest x value
-        :param float endy: highest y value
+        :param float startX: lowest x value
+        :param float startY: lowest y value
+        :param float endX: highest x value
+        :param float endY: highest y value
         """
         samplesX, samplesY = np.shape(psi0)
         self.psi = psi0
@@ -37,8 +37,8 @@ class PeriodicSim:
         self._dy = (endY - startY)/samplesY
         k0x = np.pi/self._dx
         k0y = np.pi/self._dy
-        kx = fftshift(np.linspace(-k0x, k0x, samplesX))
-        ky = fftshift(np.linspace(-k0y, k0y, samplesY))
+        self._kx = fftshift(np.linspace(-k0x, k0x, samplesX))
+        self._ky = fftshift(np.linspace(-k0y, k0y, samplesY))
         self._kxv, self._kyv = np.meshgrid(kx, ky)
         self.t = 0
 
@@ -52,7 +52,7 @@ class PeriodicSim:
 
 class DirSim:
     """
-    Non-sparse solver for Dirichlet boundary conditions, i.e. infinite well.
+    Non-sparse semi-analytic solver (i.e. expm based).
     Uses a baked-in Hamiltonian and time step created at instantiation.
     Uses a 9 point stencil approximation for the Laplace operator
     assuming an evenly spaced square grid.
@@ -92,7 +92,7 @@ class DirSim:
 
 class SparseDirSim:
     """
-    WIP sparse solver for Dirichlet boundary conditions, i.e. infinite well.
+    WIP sparse semi-analytic solver (i.e. expm based).
     Uses a baked-in Hamiltonian and time step.
     Uses a 9 point stencil approximation for the Laplace operator
     assuming an evenly spaced square grid.
@@ -137,14 +137,14 @@ class PeriodicSim1D:
     1D time evolution according to the Schrödinger equation with the
     fft method, giving periodic boundary conditions.
     """
-    def __init__(self, psi0, startx, endx, xsamples):
-        self.dx = (endx - startx)/xsamples
-        k_0 = np.pi/self.dx
-        self.k_x = fftshift(np.linspace(-k_0, k_0, xsamples))
+    def __init__(self, psi0, start, end, samples):
+        self.dx = (end - start)/samples
+        k0 = np.pi/self.dx
+        self.k = fftshift(np.linspace(-k0, k0, samples))
         self.psi = psi0
     def step(self, dt):
-        fy = fft(self.psi) * np.exp(-1.0j*self.k_x*self.k_x*dt/2)
-        self.psi = ifft(fy)
+        fy = fft(self.psi * (self.dx/np.sqrt(2*np.pi))) * np.exp(-1.0j*self.k*self.k*dt)
+        self.psi = ifft(fy) * (np.sqrt(2*np.pi)/self.dx)
     def eventimeevolution(self, t, tsamples):
         dt = t/tsamples
         for _ in range(tsamples):
@@ -152,8 +152,7 @@ class PeriodicSim1D:
 
 class DirSim1D:
     """
-    1D time evolution according to the Schrödinger equation with infinite
-    walls, giving Dirichlet boundary conditions.
+    1D time evolution according to the Schrödinger equation.
     """
     def __init__(self, psi0, dt, hamiltony, sparse=False):
         self.psi = psi0
