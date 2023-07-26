@@ -33,12 +33,14 @@ class PeriodicSim:
         """
         samplesX, samplesY = np.shape(psi0)
         self.psi = psi0
-        self._dx = (endX - startX)/samplesX
-        self._dy = (endY - startY)/samplesY
-        k0x = np.pi/self._dx
-        k0y = np.pi/self._dy
-        self._kx = fftshift(np.linspace(-k0x, k0x, samplesX))
-        self._ky = fftshift(np.linspace(-k0y, k0y, samplesY))
+        dx = (endX - startX)/samplesX
+        dy = (endY - startY)/samplesY
+        k0x = np.pi/dx
+        k0y = np.pi/dy
+        dkx = 2*k0x/samplesX
+        dky = 2*k0y/samplesY
+        kx = fftshift(np.arange(-k0x, k0x, dkx))
+        ky = fftshift(np.arange(-k0y, k0y, dky))
         self._kxv, self._kyv = np.meshgrid(kx, ky)
         self.t = 0
 
@@ -137,14 +139,16 @@ class PeriodicSim1D:
     1D time evolution according to the Schrödinger equation with the
     fft method, giving periodic boundary conditions.
     """
-    def __init__(self, psi0, start, end, samples):
-        self.dx = (end - start)/samples
-        k0 = np.pi/self.dx
-        self.k = fftshift(np.linspace(-k0, k0, samples))
+    def __init__(self, psi0, start, end):
+        self.samples = len(psi0)
+        self.dx = (end - start)/self.samples
+        self.k0 = np.pi/self.dx
+        self.dk = 2*self.k0/self.samples
+        self.k = fftshift(np.arange(-self.k0, self.k0, self.dk))
         self.psi = psi0
     def step(self, dt):
-        fy = fft(self.psi * (self.dx/np.sqrt(2*np.pi))) * np.exp(-1.0j*self.k*self.k*dt)
-        self.psi = ifft(fy) * (np.sqrt(2*np.pi)/self.dx)
+        fy = fft(self.psi) * np.exp(-1.0j*self.k*self.k*dt)
+        self.psi = ifft(fy)
     def eventimeevolution(self, t, tsamples):
         dt = t/tsamples
         for _ in range(tsamples):

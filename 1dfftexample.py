@@ -11,15 +11,16 @@ def sqr_mod(x):
 
 samples = 1024
 start = -10
-end = 9
+end = 10
+dx = (end-start)/samples
 x = np.linspace(start, end, samples)
 psi0 = gauss(x)
-dt = 0.05
-frames = 600
+dt = 0.1
+frames = 1200
 fps = 60
-t = np.arange(frames)*dt
+t = np.arange(0, dt*frames, dt)
 Ex = np.zeros(frames)
-fftsim = PeriodicSim1D(psi0, start, end, samples)
+fftsim = PeriodicSim1D(psi0, start, end)
 P = np.ones(frames)*65
 
 fig, (ax1, ax2, ax3) = plt.subplots(3)
