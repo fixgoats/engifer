@@ -1,4 +1,4 @@
-from solvers import PeriodicSim, DirSim
+from solvers import DirSim
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm, animation
@@ -22,12 +22,12 @@ psi0 = gauss(xv, yv)*(1-(xv/5)**5*(yv/5)**5)
 infwell = DirSim(psi0, -5, 5, 0.05)
 
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-ax.set_zlim(0, 1)
-def animate(frame):
-    ax.clear()
-    infwell.step()
-    surf = ax.plot_surface(xv, yv, sqr_mod(infwell.psi), cmap=cm.viridis)
-    return surf,
+#ax.set_zlim(0, 1)
+#def animate(frame):
+#    ax.clear()
+#    infwell.step()
+#    surf = ax.plot_surface(xv, yv, sqr_mod(infwell.psi), cmap=cm.viridis)
+#    return surf,
 
 anim = animation.FuncAnimation(fig, animate, frames=600, blit=True)
 FFwriter = animation.FFMpegWriter(fps=30, metadata={'copyright': 'Public Domain'})

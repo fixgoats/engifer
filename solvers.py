@@ -1,7 +1,7 @@
 # Classes to time evolve initial condition according to the Schrödinger equation
 import numpy as np
 from scipy.fft import fft, ifft, fft2, ifft2, fftshift
-from scipy.linalg import expm, block_diag
+from scipy.linalg import expm
 import scipy.sparse as sps
 
 class PeriodicSim:
@@ -106,13 +106,13 @@ class SparseDirSim:
         self._psi = psi0.flatten()
         self._h = (end - start)/self._samples
         blockOne = sps.diags([0.5, -3, 0.5],
-                             [-1, 0, 1],
+                             offsets=[-1, 0, 1],
                              shape=(self._samples, self._samples))
         blockTwo = sps.diags([0.25, 0.5, 0.25],
-                             [-1, 0, 1],
+                             offsets=[-1, 0, 1],
                              shape=(self._samples, self._samples))
         offDiagTemplate = sps.diags([1, 0, 1],
-                             [-1, 0, 1],
+                             offsets=[-1, 0, 1],
                              shape=(self._samples, self._samples))
         offDiagH = sps.kron(offDiagTemplate, blockTwo)
         diagH = sps.block_diag([blockOne for _ in range(self._samples)])

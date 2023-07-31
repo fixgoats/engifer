@@ -3,3 +3,4 @@ tensorflow>=2.13
 torch>=2.0
 scipy>=1.11
 matplotlib>=3.7
+numba>=0.57
