@@ -114,7 +114,7 @@ dim = dax.imshow(diff,
                  cmap=cm.viridis,
                  origin='lower',
                  extent=[startx, endx, startx, endx])
-fig.colorbar(dim, ax=eax)
+fig.colorbar(dim, ax=dax)
 eim = eax.imshow(sqr_mod(epsi),
                  cmap=cm.viridis,
                  origin='lower',
@@ -158,7 +158,7 @@ def animate_heatmap(frame):
     diff = sqr_mod(exactpsi - spsi)
     vmin = np.min(diff)
     vmax = np.max(diff)
-    # ax.set_title(f"sim t = {t[frame]:.3f}")
+    dax.set_title(f"$|\psi - \psi'|^2$ at $t = {times[frame]:.3f}$")
     dim.set_data(diff)
     dim.set_clim(vmin, vmax)
     bleh = sqr_mod(exactpsi)
@@ -166,11 +166,13 @@ def animate_heatmap(frame):
     evmax = np.max(bleh)
     eim.set_data(bleh)
     eim.set_clim(evmin, evmax)
-    bleh = sqr_mod(spsi)
-    svmin = np.min(bleh)
-    svmax = np.max(bleh)
-    simim.set_data(bleh)
+    eax.set_title(f"$|\psi|^2$ at t = {times[frame]:.3f}")
+    blah = sqr_mod(spsi)
+    svmin = np.min(blah)
+    svmax = np.max(blah)
+    simim.set_data(blah)
     simim.set_clim(svmin, svmax)
+    sax.set_title(f"$|\psi'|^2$ at t = {times[frame]:.3f}")
     return [dim, eim, simim]
 
 
@@ -189,4 +191,4 @@ anim = animation.FuncAnimation(fig,
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
 
-anim.save('testingdiff.mp4', writer=FFwriter)
+anim.save('animations/rkexample.mp4', writer=FFwriter)
