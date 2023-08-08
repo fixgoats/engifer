@@ -34,7 +34,11 @@ nframes = 200
 fps = 12
 t = dt * np.arange(1,nframes+1)
 psi0 = gauss(xv, yv)
-fftsim = PeriodicSim(psi0, startX, endX, startY, endY, 0.5)
+
+def V(x, y, wavefunction):
+    return -x*x - y*y + sqr_mod(wavefunction)
+
+fftsim = PeriodicSim(psi0, xv, yv, 0.5, V)
 fig, ax = plt.subplots()
 im = ax.imshow(sqr_mod(fftsim.psi),
                cmap=cm.viridis,
@@ -50,13 +54,11 @@ def init():
     return [im]
 
 def animate_heatmap(frame):
-    exactpsi = exactsol(xv, yv, t[frame], 0.5, 0.5)
     fftsim.step(dt)
-    diff = sqr_mod(exactpsi - fftsim.psi)
-    vmin = np.min(diff)
-    vmax = np.max(diff)
-    ax.set_title(f"exact t = {t[frame]:.3f}, sim t = {fftsim.t:.3f}")
-    im.set_data(diff)
+    vmin = np.min(sqr_mod(fftsim.psi))
+    vmax = np.max(sqr_mod(fftsim.psi))
+    ax.set_title(f"t = {fftsim.t:.3f}")
+    im.set_data(sqr_mod(fftsim.psi))
     im.set_clim(vmin, vmax)
     return [im]
 
