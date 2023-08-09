@@ -2,9 +2,12 @@ from solvers import PeriodicSim, PeriodicSim1D
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm, animation
+import argparse
 
 plt.rcParams['animation.ffmpeg_path'] = '/usr/bin/ffmpeg'
-
+parser = argparse.ArgumentParser()
+parser.add_argument('filename')
+args = parser.parse_args()
 
 def gauss(x, y):
     return np.exp(-x * x - y * y)
@@ -16,8 +19,11 @@ def sqr_mod(x):
 
 def exactsol(x, y, t, a, m):
     return (a / (a + 1.0j * t / m)) \
-        * np.exp(-(x * x + y * y) / (2 * (a + 1.0j * t / m)))
+        * np.exp((x * x + y * y) / (2 * (a + 1.0j * t / m)))
 
+
+def V(x, y, psi):
+    return 0
 
 startX = -10
 endX = 10
@@ -34,7 +40,7 @@ nframes = 200
 fps = 12
 t = dt * np.arange(1,nframes+1)
 psi0 = gauss(xv, yv)
-fftsim = PeriodicSim(psi0, startX, endX, startY, endY, 0.5)
+fftsim = PeriodicSim(psi0, xv, yv, 0.5, V)
 fig, ax = plt.subplots()
 im = ax.imshow(sqr_mod(fftsim.psi),
                cmap=cm.viridis,
@@ -50,12 +56,12 @@ def init():
     return [im]
 
 def animate_heatmap(frame):
-    exactpsi = exactsol(xv, yv, t[frame], 0.5, 0.5)
+    # exactpsi = exactsol(xv, yv, t[frame], 0.5, 0.5)
     fftsim.step(dt)
-    diff = sqr_mod(exactpsi - fftsim.psi)
+    diff = sqr_mod(fftsim.psi)
     vmin = np.min(diff)
     vmax = np.max(diff)
-    ax.set_title(f"exact t = {t[frame]:.3f}, sim t = {fftsim.t:.3f}")
+    ax.set_title(f"t = {fftsim.t:.3f}")
     im.set_data(diff)
     im.set_clim(vmin, vmax)
     return [im]
@@ -108,4 +114,4 @@ anim = animation.FuncAnimation(fig,
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
 
-anim.save('testingdiff.mp4', writer=FFwriter)
+anim.save(args.filename, writer=FFwriter)

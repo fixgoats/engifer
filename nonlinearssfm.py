@@ -2,8 +2,12 @@ from solvers import PeriodicSim, PeriodicSim1D
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm, animation
+import argparse
 
 plt.rcParams['animation.ffmpeg_path'] = '/usr/bin/ffmpeg'
+parser = argparse.ArgumentParser()
+parser.add_argument('filename')
+args = parser.parse_args()
 
 
 def gauss(x, y):
@@ -33,10 +37,17 @@ dt = 0.01
 nframes = 200
 fps = 12
 t = dt * np.arange(1,nframes+1)
-psi0 = gauss(xv, yv)
+psi0 = 10*gauss(xv, yv)
+alpha = 1
+
+
+def Vlinear(x, y, wavefunction):
+    return (x*x + y*y)
+
 
 def V(x, y, wavefunction):
-    return -x*x - y*y + sqr_mod(wavefunction)
+    return (x*x + y*y) + alpha*sqr_mod(wavefunction)
+
 
 fftsim = PeriodicSim(psi0, xv, yv, 0.5, V)
 fig, ax = plt.subplots()
@@ -110,4 +121,4 @@ anim = animation.FuncAnimation(fig,
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
 
-anim.save('testingdiff.mp4', writer=FFwriter)
+anim.save(args.filename, writer=FFwriter)

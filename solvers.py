@@ -3,6 +3,17 @@ import numpy as np
 from scipy.fft import fft, ifft, fft2, ifft2, fftshift
 from scipy.linalg import expm
 import scipy.sparse as sps
+from numba import jit
+
+
+@jit(nopython=True, nogil=True)
+def normSqr(x):
+    return x.real * x.real + x.imag * x.imag
+
+
+@jit(nopython=True, nogil=True)
+def gauss(x, y, a=1, scale=1):
+    return scale * np.exp(-(x * x + y * y)/a)
 
 class PeriodicSim:
     """
@@ -23,7 +34,8 @@ class PeriodicSim:
     :attribute float t: Time elapsed since start of emulation.
     Automatically managed.
     """
-    def __init__(self, psi0, xv, yv, m, V):
+
+    def __init__(self, psi0, xv, yv, m, V, dt):
         """
         :param numpy.ndarray psi0: Initial wavefunction in R-basis.
         :param float startX: lowest x value
@@ -37,8 +49,8 @@ class PeriodicSim:
         self.V = V
         self.xv = xv
         self.yv = yv
-        dx = xv[0,0] - xv[0,1]
-        dy = yv[0,0] - yv[1,0]
+        dx = xv[0, 0] - xv[0, 1]
+        dy = yv[0, 0] - yv[1, 0]
         k0x = np.pi/dx
         k0y = np.pi/dy
         dkx = 2*k0x/samplesX
@@ -47,15 +59,85 @@ class PeriodicSim:
         ky = fftshift(np.arange(-k0y, k0y, dky))
         self._kxv, self._kyv = np.meshgrid(kx, ky)
         self.t = 0
+        self.dt = dt
+        self.kTimeEvo = np.exp(-1.0j *
+                               (self._kxv * self._kxv
+                                + self._kyv * self._kyv) * dt
+                               / (2 * self.m))
 
-    def step(self, dt):
+    @jit
+    def step(self):
         """Performs one step of time evolution with time step dt."""
-        psik = fft2(np.exp(-1.0j*dt*self.V(self.xv, self.yv, self.psi)/2)*self.psi)
-        psik = psik*np.exp(-1.0j * (self._kxv * self._kxv \
-                                    + self._kyv * self._kyv) * dt\
-                           / (2 * self.m))
-        self.psi = np.exp(-1.0j*dt*self.V(self.xv, self.yv, self.psi)/2)*ifft2(psik)
-        self.t += dt
+        rTimeEvo = np.exp(-1.0j*self.dt*self.V(self.xv, self.yv, self.psi)/2)
+        psik = fft2(rTimeEvo * self.psi)
+        psik = psik*self.kTimeEvo
+        self.psi = rTimeEvo*ifft2(psik)
+        self.t += self.dt
+
+
+class SsfmGP:
+    """
+    Solver for periodic x & y boundary conditions using fft.
+    Does not incorporate a potential yet. On the bright side, this
+    makes the step method accurate for arbitrarily large time steps.
+    Or it would be if the solution didn't slowly move diagonally when
+    it should be in one place.
+
+    Attributes
+    ----------
+    :attribute numpy.ndarray psi: 2d numpy array
+        Wavefunction in R-basis. Assumes evenly spaced samples where
+        x varies within rows and y varies within columns (or maybe
+        it's the other way around?). For best performance this should
+        be a 2^n by 2^m matrix for some n, m. Running the simulation
+        modifies this attribute.
+    :attribute float t: Time elapsed since start of emulation.
+    Automatically managed.
+    """
+
+    def __init__(self, psi0, xv, yv, m, V, nR, gamma, R, pump, dt):
+        """
+        :param numpy.ndarray psi0: Initial wavefunction in R-basis.
+        :param float startX: lowest x value
+        :param float startY: lowest y value
+        :param float endX: highest x value
+        :param float endY: highest y value
+        """
+        samplesX, samplesY = np.shape(psi0)
+        self.psi = psi0
+        self.m = m
+        self.V = V
+        self.xv = xv
+        self.yv = yv
+        dx = xv[0, 0] - xv[0, 1]
+        dy = yv[0, 0] - yv[1, 0]
+        k0x = np.pi/dx
+        k0y = np.pi/dy
+        dkx = 2*k0x/samplesX
+        dky = 2*k0y/samplesY
+        kx = fftshift(np.arange(-k0x, k0x, dkx))
+        ky = fftshift(np.arange(-k0y, k0y, dky))
+        self._kxv, self._kyv = np.meshgrid(kx, ky)
+        self.t = 0
+        self.dt = dt
+        self.nR = nR
+        self.R = R
+        self.pump = pump
+        self.gamma = gamma
+        self.kTimeEvo = np.exp(-1.0j *
+                               (self._kxv * self._kxv
+                                + self._kyv * self._kyv) * dt
+                               / (2 * self.m))
+
+    def step(self):
+        """Performs one step of time evolution with time step dt."""
+        rTimeEvo = np.exp(-0.5j*self.dt*self.V(self.xv, self.yv, self.psi, self.nR))
+        psik = fft2(rTimeEvo * self.psi)
+        psik = psik*self.kTimeEvo
+        self.psi = rTimeEvo*ifft2(psik)
+        self.nR = np.exp(-(self.gamma + self.R*normSqr(self.psi))*self.dt)\
+            * self.nR + self.pump * self.dt
+        self.t += self.dt
 
 
 class DirSim:
