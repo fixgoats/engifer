@@ -65,7 +65,6 @@ class PeriodicSim:
                                 + self._kyv * self._kyv) * dt
                                / (2 * self.m))
 
-    @jit
     def step(self):
         """Performs one step of time evolution with time step dt."""
         rTimeEvo = np.exp(-1.0j*self.dt*self.V(self.xv, self.yv, self.psi)/2)

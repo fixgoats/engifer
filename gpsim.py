@@ -16,10 +16,10 @@ def exactsol(x, y, t, a, m):
         * np.exp(-(x * x + y * y) / (2 * (a + 1.0j * t / m)))
 
 
-startX = -10
-endX = 10
-startY = -10
-endY = 10
+startX = -20
+endX = 20
+startY = -20
+endY = 20
 samples = 256
 dx = (endX - startX) / samples
 x = np.arange(startX, endX, dx)
@@ -27,17 +27,18 @@ xv, yv = np.meshgrid(x, x)
 # *(1-(xv/5)**6*(yv/5)**6)
 
 dt = 0.01
-nframes = 200
+nframes = 400
 fps = 12
 t = dt * np.arange(1, nframes+1)
 psi0 = np.random.rand(samples, samples).astype('complex')
-pump = 20 * gauss(xv, yv).astype('complex')
+pump = 200 * (gauss(xv - 5, yv).astype('complex') + gauss(xv + 5, yv).astype('complex'))
 nR = np.zeros((samples, samples))
-alpha = 0
-gammalp = 1
-Gamma = 1
-R = 2
-
+alpha = 1
+gammalp = 2
+Gamma = 2
+G = 0.1
+R = 4
+eta = 1
 
 @jit(nopython=True, nogil=True)
 def Vlinear(x, y, wavefunction):
@@ -46,13 +47,15 @@ def Vlinear(x, y, wavefunction):
 
 @jit(nopython=True, nogil=True)
 def V(x, y, wavefunction, nR):
-    return alpha*normSqr(wavefunction)\
+    return (x / 16)**16 + (y / 16)**16 + \
+            alpha * normSqr(wavefunction)\
+            + G * (nR + eta / Gamma * pump)\
             - 0.5j * (gammalp - R * nR)
 
 
 gpsim = SsfmGP(psi0, xv, yv, 0.5, V, nR=nR, gamma=Gamma, R=R, pump=pump, dt=0.01)
 fig, ax = plt.subplots()
-im = ax.imshow(normSqr(gpsim.nR),
+im = ax.imshow(normSqr(gpsim.psi),
                cmap=cm.viridis,
                origin='lower',
                extent=[startX, endX, startY, endY])
@@ -65,10 +68,10 @@ def init():
 
 def animate_heatmap(frame):
     gpsim.step()
-    vmin = np.min(gpsim.nR.real)
-    vmax = np.max(gpsim.nR.real)
+    vmin = np.min(normSqr(gpsim.psi))
+    vmax = np.max(normSqr(gpsim.psi))
     ax.set_title(f"t = {gpsim.t:.3f}")
-    im.set_data(gpsim.nR.real)
+    im.set_data(normSqr(gpsim.psi))
     im.set_clim(vmin, vmax)
     return [im]
 
