@@ -4,12 +4,12 @@ from scipy.fft import fft, ifft, fft2, ifft2, fftshift
 from scipy.linalg import expm
 import scipy.sparse as sps
 from numba import jit
-
+import torch
+import torch.fft as tfft
 
 @jit(nopython=True, nogil=True)
 def normSqr(x):
     return x.real * x.real + x.imag * x.imag
-
 
 @jit(nopython=True, nogil=True)
 def gauss(x, y, a=1, scale=1):
@@ -74,7 +74,7 @@ class PeriodicSim:
         self.t += self.dt
 
 
-class SsfmGP:
+class SsfmGPNp:
     """
     Solver for periodic x & y boundary conditions using fft.
     Does not incorporate a potential yet. On the bright side, this
@@ -138,6 +138,67 @@ class SsfmGP:
             * self.nR + self.pump * self.dt
         self.t += self.dt
 
+class SsfmGPCUDA:
+    def __init__(self, psi0, gridX, gridY, m, nR0, alpha, Gamma, gammalp, R, pump, G, eta, dt):
+        cuda = torch.device('cuda')
+        self.psi = psi0.type(dtype=torch.cfloat).to(device=cuda)
+        self.psik = tfft.fft2(self.psi)
+        dx = gridX[0, 1] - gridX[0, 0]
+        dy = gridY[1, 0] - gridY[0, 0]
+        kxmax = np.pi / dx
+        kymax = np.pi / dy
+        dkx = 2*kxmax / psi0.size(dim=0)
+        dky = 2*kymax / psi0.size(dim=1)
+        kx = torch.arange(-kxmax, kxmax, dkx)
+        ky = torch.arange(-kymax, kymax, dky)
+        kx = tfft.fftshift(kx)
+        ky = tfft.fftshift(ky)
+        self.kxv, self.kyv = torch.meshgrid(kx, ky, indexing='ij')
+        self.kxv = self.kxv.type(dtype=torch.cfloat).to(device=cuda)
+        self.kyv = self.kyv.type(dtype=torch.cfloat).to(device=cuda)
+        self.t = 0
+        self.dt = dt
+        self.nR = nR0.type(dtype=torch.cfloat).to(device=cuda)
+        self.R = R
+        self.pump = pump.type(dtype=torch.cfloat).to(device=cuda)
+        self.Gamma = Gamma
+        self.m = m
+        squareK = self.kxv * self.kxv + self.kyv * self.kyv
+        self.kTimeEvo = torch.exp(-1.0j * squareK * dt / (2 * m))
+        self.alpha = alpha
+        self.eta = eta
+        self.G = G
+        self.constV = (gridX / 16)**16 + (gridY / 16)**16 - 0.5j * gammalp
+        self.constV = self.constV.to(device=cuda)
+
+    def V(self):
+        return self.constV + self.alpha * self.psiNormSqr() \
+                + self.G * (self.nR + self.eta * self.pump / self.Gamma)\
+                + 0.5j * self.R * self.nR
+
+    def halfRStepPsi(self):
+        halfRTimeEvo = torch.exp(-0.5j * self.dt * self.V())
+        self.psi = self.psi * halfRTimeEvo
+
+    def halfRStepNR(self):
+        halfRTimeEvo = torch.exp(-0.5 * self.dt * (self.Gamma + self.R * self.psiNormSqr()))
+        self.nR = halfRTimeEvo * self.nR + self.pump * self.dt / 2
+
+    def psiNormSqr(self):
+        return self.psi.conj() * self.psi
+
+    def psikNormSqr(self):
+        return tfft.fftshift(self.psik.conj()) * tfft.fftshift(self.psik)
+
+    def step(self):
+        self.halfRStepPsi()
+        tfft.fft2(self.psi, out=self.psik, norm='ortho')
+        self.psik = self.psik * self.kTimeEvo
+        tfft.ifft2(self.psik, out=self.psi, norm='ortho')
+        self.halfRStepNR()
+        self.halfRStepPsi()
+        self.halfRStepNR()
+        self.t += self.dt
 
 class DirSim:
     """

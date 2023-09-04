@@ -1,13 +1,11 @@
 from solvers import SsfmGP, normSqr, gauss
 import numpy as np
-import subprocess
 import matplotlib.pyplot as plt
 from matplotlib import cm, animation
 from numba import jit
 import argparse
 
-ffmpegPath = subprocess.run(["whereis", "ffmpeg"], capture_output=True, encoding='utf8')
-plt.rcParams['animation.ffmpeg_path'] = ffmpegPath.stdout.split()[1]
+plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 parser = argparse.ArgumentParser()
 parser.add_argument('-a', '--animation')
 parser.add_argument('-d', '--dispersion')
@@ -37,6 +35,7 @@ t = dt * np.arange(1, nframes+1)
 psi0 = np.random.rand(samples, samples).astype('complex')
 #psi0 = np.zeros((samples, samples), dtype='complex')
 pump = 200 * (gauss(xv - 5, yv).astype('complex') + gauss(xv + 5, yv).astype('complex'))
+print(pump[90, 128])
 nR = np.zeros((samples, samples))
 alpha = 0.01
 gammalp = 2
