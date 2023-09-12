@@ -1,23 +1,23 @@
 import numpy as np
-import itertools
 import torch
-from torch.fft import fft, fft2, fftshift
-from solvers import SsfmGPCUDA
+from torch.fft import fft2, fftshift
+from src.solvers import SsfmGPCUDA
 import matplotlib.pyplot as plt
-from matplotlib import animation
-import numpy as np
+
 
 def gauss(x, y):
     return torch.exp(-x * x - y * y)
+
 
 def exactsol(x, y, t, a, m):
     return (a / (a + 1.0j * t / m)) \
         * torch.exp(-(x * x + y * y) / (2 * (a + 1.0j * t / m)))
 
+
 cuda = torch.device('cuda')
 samplesX = 256
 samplesY = 256
-startX = -20 # micrometers
+startX = -20  # micrometers
 endX = 20
 startY = -20
 endY = 20
