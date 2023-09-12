@@ -10,20 +10,14 @@ Clone the project and change directories into the project:
 git clone https://github.com/fixgoats/engifer.git
 cd engifer
 ```
-Ideally, create and activate a virtual environment:
+Ideally, create and activate a virtual environment and install the dependencies:
 ```
 python3 -m venv env
 source env/bin/activate
-```
-Dependencies are specified in `requirements.txt` and can be installed after
-activating the virtual environment:
-```
 pip install -r requirements.txt
 ```
-Now you can run `torchtest.py`. You need an Nvidia GPU to run it, and you supply
-the flags `-a` and `-d` to specify the output files for the animation of the system
-in R and k space and the animation for the dispersion relation, respectively.
+Now you can run `movingpumps.py`. You need an Nvidia GPU to run it and it takes 
+at least a few seconds to run.
 ```
-python torchtest.py -a animations/system.mp4 -d animations/dispersion.mp4
+python movingpumps.py
 ```
-If either flag is 
