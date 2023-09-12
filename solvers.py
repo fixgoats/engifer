@@ -139,6 +139,24 @@ class SsfmGPNp:
         self.t += self.dt
 
 class SsfmGPCUDA:
+    __slots__ = ('psi',
+                 'psik',
+                 'kxv',
+                 'kyv',
+                 'm',
+                 'nR',
+                 'dt',
+                 't',
+                 'R',
+                 'pump',
+                 'Gamma',
+                 'm',
+                 'kTimeEvo',
+                 'alpha',
+                 'G',
+                 'eta',
+                 'constV')
+
     def __init__(self, psi0, gridX, gridY, m, nR0, alpha, Gamma, gammalp, R, pump, G, eta, dt):
         cuda = torch.device('cuda')
         self.psi = psi0.type(dtype=torch.cfloat).to(device=cuda)
