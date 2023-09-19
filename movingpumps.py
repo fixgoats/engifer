@@ -1,8 +1,15 @@
 import numpy as np
 import torch
 from torch.fft import fft2, fftshift
-from src.solvers import SsfmGPCUDA
+from src.solvers import SsfmGPCUDA, findLocalMaxima
 import matplotlib.pyplot as plt
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-o', '--output')
+args = parser.parse_args()
+if args.output is None:
+    exit('Need to specify filename for graph')
 
 
 def gauss(x, y):
@@ -28,7 +35,7 @@ x = x.type(dtype=torch.cfloat)
 gridY, gridX = torch.meshgrid(x, x, indexing='ij')
 kxmax = np.pi / dx
 kymax = np.pi / dy
-dt = 0.02
+dt = 0.15
 m = 0.5
 psi = torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 psik0 = fftshift(fft2(psi, norm='ortho'))
@@ -42,6 +49,8 @@ Gamma = 1
 G = 0.1
 R = 2
 eta = 1
+constV = ((gridX / 16)**2 + (gridY / 16)**2)**8 - 0.5j*gammalp
+
 
 def normSqr(x):
     return x.conj() * x
@@ -62,54 +71,71 @@ gpsim = SsfmGPCUDA(psi0=psi,
                    pump=pump,
                    G=G,
                    eta=eta,
+                   constV=constV,
                    dt=dt)
 
-nframes = 512
-npumps = 100
+nframes = 2048
+npumps = 51
 distances = np.zeros(npumps)
 energies = np.zeros(npumps)
-def findLocalMaxima(vector, fuzz):
-    idxValPairs = []
-    last = vector[0]
-    ascending = True
-    for i, val in enumerate(vector):
-        if ascending and abs(val - last) > fuzz and val < last:
-            idxValPairs.append((i-1, last.item()))
-            ascending = False
-        elif not ascending and abs(val - last) > fuzz and val >= last:
-            ascending = True
+maxEnergy = np.pi / dt  # hbar / ps
+dE = 2 * maxEnergy / nframes
 
-        last = val
-    idxValPairs = sorted(idxValPairs, key=lambda x: x[1])
-    return idxValPairs
 
 uhh = []
-separations = np.linspace(2, 7, npumps)
+separations = np.linspace(2, 5, npumps)
 ds = []
-for d in separations:
+wholepicture = np.zeros((nframes, npumps))
+for j, d in enumerate(separations):
     dispersion = torch.zeros((nframes, samplesX), dtype=torch.cfloat, device=cuda)
-    pump = 100 * (gauss(gridX - d, gridY)\
-            + gauss(gridX + d, gridY))
+    pump = 50 * (gauss(gridX - d, gridY) + gauss(gridX + d, gridY))
     gpsim.pump = pump.to(device=cuda)
     for i in range(nframes):
         gpsim.step()
-        dispersion[i, :] = gpsim.psi[255, :]
+        dispersion[i, :] = gpsim.psi[127, :]
 
     dispersion = torch.flip(dispersion, [0])
-    window = fftshift(fft2(dispersion, norm='ortho'))
+    if j % 10 == 0:
+        fig, ax = plt.subplots()
+        tmp = normSqr(dispersion).real.cpu().detach().numpy()
+        im = ax.imshow(tmp,
+                       origin='lower',
+                       aspect='auto',
+                       extent=[startX, endX, 0, nframes*dt])
+        fig.colorbar(im, ax=ax)
+        plt.savefig(f'graphs/rsnapshot{j//10}.pdf')
+    window = fftshift(fft2(dispersion))
     window = (window.conj() * window).real
-    window = torch.sum(window, 1) / samplesX
-    bleh = findLocalMaxima(window[270:290], fuzz=2e-6)
+    if j % 10 == 0:
+        fig, ax = plt.subplots()
+        tmp = window.cpu().detach().numpy()
+        im = ax.imshow(tmp,
+                       origin='lower',
+                       aspect='auto',
+                       extent=[-kxmax, kxmax, -maxEnergy, maxEnergy])
+        fig.colorbar(im, ax=ax)
+        plt.savefig(f'graphs/ksnapshot{j//10}.pdf')
+    window = torch.sum(window, 1) / (samplesX*samplesY)
+    bleh = findLocalMaxima(window, fuzz=2e-3)
     uhh.append(bleh)
     for val in bleh:
         ds.append(d)
+    wholepicture[:, j] = window.cpu().detach().numpy()
 
-maxEnergy = np.pi / dt # hbar / ps
-dE = 2 * maxEnergy / nframes
 
-energies = [maxEnergy - dE * (242 + x[0]) for bleh in uhh for x in bleh]
+# x[0] is the index in window where the peak was found. If the first element in
+# window corresponds to the highest energy, then maxEnergy - dE * x[0] should
+# be the corresponding energy value.
+energies = [maxEnergy - dE * x[0] for bleh in uhh for x in bleh]
 fig, ax = plt.subplots()
 ax.set_ylabel(r'$E$ ($\hbar$ / ps)')
 ax.set_xlabel(r'$d$ ($\mu$ m)')
-plt.plot(ds, energies, 'ro')
-plt.savefig("graphs/energies.pdf")
+plt.plot(ds, energies, 'r+')
+plt.savefig(args.output)
+
+fig, ax = plt.subplots()
+im = ax.imshow(wholepicture,
+               aspect='auto',
+               extent=[2, 5, -maxEnergy, maxEnergy])
+fig.colorbar(im, ax=ax)
+plt.savefig('graphs/wholepicture.pdf')

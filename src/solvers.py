@@ -7,13 +7,32 @@ from numba import jit
 import torch
 import torch.fft as tfft
 
+
 @jit(nopython=True, nogil=True)
 def normSqr(x):
     return x.real * x.real + x.imag * x.imag
 
+
 @jit(nopython=True, nogil=True)
 def gauss(x, y, a=1, scale=1):
     return scale * np.exp(-(x * x + y * y)/a)
+
+
+def findLocalMaxima(vector, fuzz):
+    idxValPairs = []
+    last = vector[0]
+    ascending = True
+    for i, val in enumerate(vector):
+        if ascending and abs(val - last) > fuzz and val < last:
+            idxValPairs.append((i-1, last.item()))
+            ascending = False
+        elif not ascending and abs(val - last) > fuzz and val >= last:
+            ascending = True
+
+        last = val
+    idxValPairs = sorted(idxValPairs, key=lambda x: x[1])
+    return idxValPairs
+
 
 class PeriodicSim:
     """
@@ -138,6 +157,7 @@ class SsfmGPNp:
             * self.nR + self.pump * self.dt
         self.t += self.dt
 
+
 class SsfmGPCUDA:
     __slots__ = ('psi',
                  'psik',
@@ -157,7 +177,21 @@ class SsfmGPCUDA:
                  'eta',
                  'constV')
 
-    def __init__(self, psi0, gridX, gridY, m, nR0, alpha, Gamma, gammalp, R, pump, G, eta, dt):
+    def __init__(self,
+                 psi0,
+                 gridX,
+                 gridY,
+                 m,
+                 nR0,
+                 alpha,
+                 Gamma,
+                 gammalp,
+                 R,
+                 pump,
+                 G,
+                 eta,
+                 constV,
+                 dt):
         cuda = torch.device('cuda')
         self.psi = psi0.type(dtype=torch.cfloat).to(device=cuda)
         self.psik = tfft.fft2(self.psi)
@@ -186,8 +220,7 @@ class SsfmGPCUDA:
         self.alpha = alpha
         self.eta = eta
         self.G = G
-        self.constV = (gridX / 16)**16 + (gridY / 16)**16 - 0.5j * gammalp
-        self.constV = self.constV.to(device=cuda)
+        self.constV = constV.to(device=cuda)
 
     def V(self):
         return self.constV + self.alpha * self.psiNormSqr() \
