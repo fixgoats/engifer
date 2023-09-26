@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.fft import fft2, fftshift
+from torch.fft import fft, ifft, fft2, fftshift
 from src.solvers import SsfmGPCUDA, findLocalMaxima
 import matplotlib.pyplot as plt
 import argparse
@@ -38,9 +38,6 @@ kymax = np.pi / dy
 dt = 0.15
 m = 0.5
 psi = torch.rand((samplesY, samplesX), dtype=torch.cfloat)
-psik0 = fftshift(fft2(psi, norm='ortho'))
-psik0 = psik0[192:320, 192:320]
-fps = 24
 
 # Coefficients for GP equation
 alpha = 0.01
@@ -75,7 +72,7 @@ gpsim = SsfmGPCUDA(psi0=psi,
                    dt=dt)
 
 nframes = 2048
-npumps = 51
+npumps = 31
 distances = np.zeros(npumps)
 energies = np.zeros(npumps)
 maxEnergy = np.pi / dt  # hbar / ps
@@ -83,18 +80,18 @@ dE = 2 * maxEnergy / nframes
 
 
 uhh = []
-separations = np.linspace(2, 5, npumps)
+separations = np.linspace(2, 3.24, npumps)
 ds = []
 wholepicture = np.zeros((nframes, npumps))
 for j, d in enumerate(separations):
     dispersion = torch.zeros((nframes, samplesX), dtype=torch.cfloat, device=cuda)
-    pump = 50 * (gauss(gridX - d, gridY) + gauss(gridX + d, gridY))
+    pump = 50 * (gauss((gridX - d), (gridY)) + gauss((gridX + d), (gridY)))
     gpsim.pump = pump.to(device=cuda)
     for i in range(nframes):
         gpsim.step()
         dispersion[i, :] = gpsim.psi[127, :]
 
-    dispersion = torch.flip(dispersion, [0])
+    # dispersion = torch.flip(dispersion, [0])
     if j % 10 == 0:
         fig, ax = plt.subplots()
         tmp = normSqr(dispersion).real.cpu().detach().numpy()
@@ -104,7 +101,7 @@ for j, d in enumerate(separations):
                        extent=[startX, endX, 0, nframes*dt])
         fig.colorbar(im, ax=ax)
         plt.savefig(f'graphs/rsnapshot{j//10}.pdf')
-    window = fftshift(fft2(dispersion))
+    window = fftshift(ifft(fft(dispersion, dim=0), dim=1))
     window = (window.conj() * window).real
     if j % 10 == 0:
         fig, ax = plt.subplots()
@@ -137,5 +134,7 @@ fig, ax = plt.subplots()
 im = ax.imshow(wholepicture,
                aspect='auto',
                extent=[2, 5, -maxEnergy, maxEnergy])
+ax.set_ylabel(r'E ($\hbar$/ps)')
+ax.set_xlabel(r'd ($\mu$m)')
 fig.colorbar(im, ax=ax)
-plt.savefig('graphs/wholepicture.pdf')
+plt.savefig('graphs/nonflippedwholepicture.pdf')
