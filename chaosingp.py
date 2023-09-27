@@ -57,34 +57,57 @@ def normSqr(x):
 
 
 points = makeSunGrid(20, 5)
-pump = torch.zeros((samplesX, samplesY), dtype=torch.cfloat)
+pump1 = torch.zeros((samplesX, samplesY), dtype=torch.cfloat)
 for p in points:
-    pump += 100*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
+    pump1 += 100*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
+
+pump2 = torch.zeros((samplesX, samplesY), dtype=torch.cfloat)
+for p in points:
+    if p != 0+0j:
+        pump2 += 100*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
+    else:
+        pump2 += 100*gauss(gridX - 0.1, gridY, 0.1, 0.1)
+
 nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 
-gpsim = SsfmGPCUDA(psi0=psi,
-                   gridX=gridX,
-                   gridY=gridY,
-                   m=m,
-                   nR0=nR,
-                   alpha=alpha,
-                   Gamma=Gamma,
-                   gammalp=gammalp,
-                   R=R,
-                   pump=pump,
-                   G=G,
-                   eta=eta,
-                   constV=constV,
-                   dt=dt)
+gpsim1 = SsfmGPCUDA(psi0=psi,
+                    gridX=gridX,
+                    gridY=gridY,
+                    m=m,
+                    nR0=nR,
+                    alpha=alpha,
+                    Gamma=Gamma,
+                    gammalp=gammalp,
+                    R=R,
+                    pump=pump1,
+                    G=G,
+                    eta=eta,
+                    constV=constV,
+                    dt=dt)
+
+gpsim2 = SsfmGPCUDA(psi0=psi,
+                    gridX=gridX,
+                    gridY=gridY,
+                    m=m,
+                    nR0=nR,
+                    alpha=alpha,
+                    Gamma=Gamma,
+                    gammalp=gammalp,
+                    R=R,
+                    pump=pump2,
+                    G=G,
+                    eta=eta,
+                    constV=constV,
+                    dt=dt)
 
 nframes = 1024
 fps = 24
 fig, ax = plt.subplots()
-im = ax.imshow(normSqr(gpsim.psi).real.cpu().detach().numpy(),
+im = ax.imshow(normSqr(gpsim2.psi - gpsim1.psi).real.cpu().detach().numpy(),
                origin='lower',
                extent=[startX, endX, startY, endY])
 vmin = 0
-vmax = 120
+vmax = 80
 im.set_clim(vmin, vmax)
 ax.set_xlabel(r'x ($\mu$m)')
 ax.set_ylabel(r'y ($\mu$m)')
@@ -96,8 +119,9 @@ def init():
 
 
 def animate_heatmap(frame):
-    gpsim.step()
-    data = normSqr(gpsim.psi).real.detach().cpu().numpy()
+    gpsim1.step()
+    gpsim2.step()
+    data = normSqr(gpsim2.psi - gpsim1.psi).real.detach().cpu().numpy()
     im.set_data(data)
     return [im]
 
@@ -108,4 +132,4 @@ anim = animation.FuncAnimation(fig,
                                frames=nframes)
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
-anim.save('animations/quasicrystal.mp4', writer=FFwriter)
+anim.save('animations/chaosingp.mp4', writer=FFwriter)

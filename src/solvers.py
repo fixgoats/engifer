@@ -205,9 +205,7 @@ class SsfmGPCUDA:
         ky = torch.arange(-kymax, kymax, dky)
         kx = tfft.fftshift(kx)
         ky = tfft.fftshift(ky)
-        self.kxv, self.kyv = torch.meshgrid(kx, ky, indexing='ij')
-        self.kxv = self.kxv.type(dtype=torch.cfloat).to(device=cuda)
-        self.kyv = self.kyv.type(dtype=torch.cfloat).to(device=cuda)
+        kxv, kyv = torch.meshgrid(kx, ky, indexing='ij')
         self.t = 0
         self.dt = dt
         self.nR = nR0.type(dtype=torch.cfloat).to(device=cuda)
@@ -215,8 +213,8 @@ class SsfmGPCUDA:
         self.pump = pump.type(dtype=torch.cfloat).to(device=cuda)
         self.Gamma = Gamma
         self.m = m
-        squareK = self.kxv * self.kxv + self.kyv * self.kyv
-        self.kTimeEvo = torch.exp(-1.0j * squareK * dt / (2 * m))
+        squareK = kxv * kxv + kyv * kyv
+        self.kTimeEvo = torch.exp(-1.0j * squareK * dt / (2 * m)).to(device=cuda)
         self.alpha = alpha
         self.eta = eta
         self.G = G
