@@ -40,10 +40,11 @@ kxmax = np.pi / dx
 kymax = np.pi / dy
 dt = 0.05
 m = 0.5
-psi = torch.sin(gridX)*torch.cos(gridY)
+psi0 = torch.sin(gridX)*torch.cos(gridY)
+psi1 = torch.sin(gridX)*torch.cos(gridY - 0.01)
 
 # Coefficients for GP equation
-alpha = 0.01
+alpha = 0.0
 gammalp = 2
 Gamma = 1
 G = 0.1
@@ -57,20 +58,13 @@ def normSqr(x):
 
 
 points = makeSunGrid(20, 5)
-pump1 = torch.zeros((samplesX, samplesY), dtype=torch.cfloat)
+pump = torch.zeros((samplesX, samplesY), dtype=torch.cfloat)
 for p in points:
-    pump1 += 100*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
-
-pump2 = torch.zeros((samplesX, samplesY), dtype=torch.cfloat)
-for p in points:
-    if p != 0+0j:
-        pump2 += 100*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
-    else:
-        pump2 += 100*gauss(gridX - 0.1, gridY, 0.1, 0.1)
+    pump += 100*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
 
 nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 
-gpsim1 = SsfmGPCUDA(psi0=psi,
+gpsim1 = SsfmGPCUDA(psi0=psi0,
                     gridX=gridX,
                     gridY=gridY,
                     m=m,
@@ -79,13 +73,13 @@ gpsim1 = SsfmGPCUDA(psi0=psi,
                     Gamma=Gamma,
                     gammalp=gammalp,
                     R=R,
-                    pump=pump1,
+                    pump=pump,
                     G=G,
                     eta=eta,
                     constV=constV,
                     dt=dt)
 
-gpsim2 = SsfmGPCUDA(psi0=psi,
+gpsim2 = SsfmGPCUDA(psi0=psi1,
                     gridX=gridX,
                     gridY=gridY,
                     m=m,
@@ -94,7 +88,7 @@ gpsim2 = SsfmGPCUDA(psi0=psi,
                     Gamma=Gamma,
                     gammalp=gammalp,
                     R=R,
-                    pump=pump2,
+                    pump=pump,
                     G=G,
                     eta=eta,
                     constV=constV,
@@ -132,4 +126,4 @@ anim = animation.FuncAnimation(fig,
                                frames=nframes)
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
-anim.save('animations/chaosingp.mp4', writer=FFwriter)
+anim.save('animations/chaosinlingp.mp4', writer=FFwriter)

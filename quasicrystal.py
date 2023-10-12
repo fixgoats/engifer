@@ -5,6 +5,7 @@ from src.penrose import makeSunGrid
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
 from matplotlib import animation
+from matplotlib.colors import ListedColormap
 #import argparse
 
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
@@ -36,30 +37,38 @@ y = y.type(dtype=torch.cfloat)
 gridY, gridX = torch.meshgrid(y, x, indexing='ij')
 kxmax = np.pi / dx
 kymax = np.pi / dy
-dt = 0.07
+dt = 0.1
 m = 0.5
-psi = 0.1*torch.sin(gridX)*torch.cos(gridY)
+psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 
 # Coefficients for GP equation
-alpha = 0.1
+alpha = 0.01
 gammalp = 2
 Gamma = 1
 G = 0.1
 R = 2
 eta = 1
-constV = ((gridX / 25)**2 + (gridY / 25)**2)**8 - 0.5j*gammalp
+constV = ((gridX / 30)**2 + (gridY / 30)**2)**8 - 0.5j*gammalp
 
 
 def normSqr(x):
     return x.conj() * x
 
-
-points = makeSunGrid(20, 5)
+radius = 20
+divisions = 5
+points = makeSunGrid(radius, divisions)
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
+pumpPos = np.zeros((samplesY, samplesX))
+pumpStrength = 4
 for p in points:
-    pump += 5*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
-nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
+    addition = pumpStrength*gauss(gridX - p.real, gridY - p.imag, 0.1, 0.1)
+    pump += addition
+    idx = np.argmax(addition)
+    yIdx = idx // samplesY
+    xIdx = idx % samplesX
+    pumpPos[yIdx-1:yIdx+1, xIdx-1:xIdx+1] = 1
 
+nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 gpsim = SsfmGPCUDA(psi0=psi,
                    gridX=gridX,
                    gridY=gridY,
@@ -75,46 +84,64 @@ gpsim = SsfmGPCUDA(psi0=psi,
                    constV=constV,
                    dt=dt)
 
-nframes = 2048
+nframes = 1024
 fps = 24
-fig, ax = plt.subplots()
-im = ax.imshow(normSqr(gpsim.psi).real.cpu().detach().numpy(),
+fig, [ax1, ax2] = plt.subplots(1,2)
+extent = [startX, endX, startY, endY]
+im1 = ax1.imshow(normSqr(gpsim.psi).real.cpu().detach().numpy(),
                origin='lower',
-               extent=[startX, endX, startY, endY])
-ax.set_xlabel(r'x ($\mu$m)')
-ax.set_ylabel(r'y ($\mu$m)')
-fig.colorbar(im, ax=ax)
-bleh = np.zeros((2048, 512), dtype=complex)
+               extent=extent)
+im2 = ax2.imshow(normSqr(gpsim.psik).real.cpu().detach().numpy(),
+               origin='lower',
+               extent=extent)
+im1.set_clim(0, 0.35)
 
+cmap0 = ListedColormap(['#00000000', '#ff6347ff'])
+positions = ax1.imshow(pumpPos, interpolation='none', cmap=cmap0, extent=extent)
+positions.set_clim(0,1)
+ax1.set_xlabel(r'x ($\mu$m)')
+ax1.set_ylabel(r'y ($\mu$m)')
+plt.colorbar(im1, ax=ax1)
+plt.colorbar(im2, ax=ax2)
+bleh = np.zeros((1024, 512), dtype=complex)
+
+for _ in range(300):
+    gpsim.step()
 
 def init():
-    return [im]
+    return [im1, im2]
 
 
 def animate_heatmap(frame):
     gpsim.step()
-    data = gpsim.psi.detach().cpu().numpy()
-    bleh[frame, :] = data[127, :]
-    im.set_data(normSqr(data).real)
-    # vmin = np.min(data)
-    # vmax = np.max(data)
-    im.set_clim(0, 5)
-    return [im]
+    rdata = gpsim.psi.detach().cpu().numpy()
+    kdata = fftshift(gpsim.psik.detach().cpu().numpy())
+    bleh[frame, :] = kdata[256, :]
+    im1.set_data(normSqr(rdata).real)
+    im2.set_data(np.log(normSqr(kdata).real + 1))
+    ax1.set_title(f'$|\\psi_r|^2$, t = {gpsim.t} ps')
+    ax2.set_title(f'log$(|\\psi_k|^2 + 1)$')
+    vmin = np.min(np.log(normSqr(kdata).real + 1))
+    vmax = np.max(np.log(normSqr(kdata).real + 1))
+    im2.set_clim(vmin, vmax)
+    return [im1, im2]
 
 
 anim = animation.FuncAnimation(fig,
                                animate_heatmap,
                                init_func=init,
-                               frames=nframes)
+                               frames=nframes,
+                               blit=False)
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
-anim.save('animations/lessintensequasicrystal.mp4', writer=FFwriter)
+anim.save(f'animations/penroser{radius}d{divisions}p{pumpStrength}.mp4', writer=FFwriter)
 
 Emax = np.pi / dt
-bleh = fftshift(fft(ifft(bleh, axis=0), axis=1))
+bleh = fftshift(ifft(bleh, axis=0))
 plt.cla()
 fig, ax = plt.subplots()
 im = ax.imshow(np.log(normSqr(bleh).real),
                aspect='auto',
+               origin='lower',
                extent=[-kxmax, kxmax, -Emax, Emax])
-plt.savefig('dispersion.pdf')
+plt.savefig(f'graphs/penrosedispersionr{radius}d{divisions}p{pumpStrength}.pdf')
