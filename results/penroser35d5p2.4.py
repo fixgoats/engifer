@@ -56,9 +56,9 @@ def normSqr(x):
     return x.conj() * x
 
 
-radius = 20
-divisions = 4
-pumpStrength = 3.3
+radius = 35
+divisions = 5
+pumpStrength = 2.35
 points = makeSunGrid(radius, divisions)
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 pumpPos = np.zeros((samplesY, samplesX))
@@ -96,8 +96,9 @@ psik0 = normSqr(gpsim.psik).real.cpu().detach().numpy()
 im2 = ax2.imshow(fftshift(psik0)[191:512-192, 191:512-192],
                  origin='lower',
                  extent=extentk)
-im1.set_clim(0, 0.4)
+im1.set_clim(0, 0.6)
 
+cmap0 = ListedColormap(['#00000000', '#ff6347ff'])
 positions = ax1.scatter([p.real for p in points],
                         [p.imag for p in points],
                         s=0.5,
@@ -109,7 +110,7 @@ plt.colorbar(im1, ax=ax1)
 plt.colorbar(im2, ax=ax2)
 bleh = np.zeros((nframes, samplesX), dtype=complex)
 
-for _ in range(5000):
+for _ in range(4096):
     gpsim.step()
 
 def init():
@@ -122,11 +123,11 @@ def animate_heatmap(frame):
     kdata = gpsim.psik.detach().cpu().numpy()
     bleh[frame, :] = kdata[256, :]
     im1.set_data(normSqr(rdata).real)
-    im2.set_data(normSqr(fftshift(kdata)[192:512-192, 192:512-192]).real)
+    im2.set_data(np.log(normSqr(fftshift(kdata)[192:512-192, 192:512-192]).real + 1))
     ax1.set_title(f'$|\\psi_r|^2$, t = {gpsim.t} ps')
     ax2.set_title('log$(|\\psi_k|^2 + 1)$')
-    vmin = np.min(normSqr(kdata).real)
-    vmax = np.max(normSqr(kdata).real)
+    vmin = np.min(np.log(normSqr(kdata).real + 1))
+    vmax = np.max(np.log(normSqr(kdata).real + 1))
     im2.set_clim(vmin, vmax)
     return [im1, im2]
 
@@ -135,7 +136,7 @@ anim = animation.FuncAnimation(fig,
                                animate_heatmap,
                                init_func=init,
                                frames=nframes,
-                               blit=False)
+                               blit=True)
 FFwriter = animation.FFMpegWriter(fps=fps,
                                   metadata={'copyright': 'Public Domain'})
 anim.save(f'animations/penroser{radius}d{divisions}p{pumpStrength}.mp4', writer=FFwriter)
