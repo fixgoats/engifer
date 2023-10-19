@@ -57,8 +57,8 @@ def normSqr(x):
 
 
 radius = 20
-divisions = 4
-pumpStrength = 3.3
+divisions = 3
+pumpStrength = 3.1
 points = makeSunGrid(radius, divisions)
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 pumpPos = np.zeros((samplesY, samplesX))
@@ -144,7 +144,6 @@ Emax = np.pi / dt
 bleh = fftshift(ifft(bleh, axis=0))
 plt.cla()
 fig, ax = plt.subplots()
-im = ax.imshow(np.log(normSqr(bleh).real),
-               origin='lower',
+im = ax.imshow(normSqr(bleh).real,              origin='lower',
                extent=[-kxmax, kxmax, -Emax, Emax])
 plt.savefig(f'graphs/penrosedispersionr{radius}d{divisions}p{pumpStrength}.pdf')
