@@ -4,3 +4,5 @@ env/
 *#*
 torchtest.py
 .idea
+animations/
+graphs/

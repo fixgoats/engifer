@@ -10,8 +10,8 @@ def rotate(array, theta):
         ])
 
 
-def makegrid():
-    vectors = np.array([
+def makegrid(scale):
+    vectors = scale*np.array([
             [0, 0],
             [0, 1.73205081],
             [-1,    0],
@@ -35,10 +35,13 @@ def makegrid():
     tile4 = rotate(tile - tile[11, :], np.radians(180)) + (tile[10, :])
     tile5 = mirrortile + tile3[8, :]
     grid = np.concatenate((tile, tile2, tile3, tile4, tile5))
-    returngrid = np.array([grid[0, :]])
-    for row in grid:
-        for rrow in returngrid:
-            if any(np.abs(rrow - row) > 0.1):
-                np.append(returngrid, [[0, 1]], axis=0)
-                print(returngrid)
-    return returngrid
+    duplicates = []
+    for i, row in enumerate(grid):
+        for j, otherrow in enumerate(grid[i+1:, :]):
+            if all(np.abs(row-otherrow) < 0.1*scale):
+                duplicates.append(j + i + 1)
+    return np.delete(grid, duplicates, axis=0)
+
+
+if __name__ == '__main__':
+    makegrid(1)

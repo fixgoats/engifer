@@ -59,8 +59,12 @@ def normSqr(x):
 radius = 20
 divisions = 4
 pumpStrength = 3.3
-points = makegrid()
-print(points)
+points = makegrid(1)
+print(len(points))
+fig, ax = plt.subplots()
+ax.scatter(points[:,0], points[:,1])
+ax.set_aspect('equal')
+plt.show()
 # pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 # pumpPos = np.zeros((samplesY, samplesX))
 # for p in points:
