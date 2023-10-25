@@ -140,6 +140,7 @@ FFwriter = animation.FFMpegWriter(fps=fps, metadata=pars)
 path = f'animations/penroser{pars["radius"]}'\
        f'd{pars["divisions"]}'\
        f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}.mp4'
 
 anim.save(path, writer=FFwriter)
@@ -153,5 +154,6 @@ im = ax.imshow(normSqr(bleh).real, origin='lower',
 path = f'graphs/penrosedispersionr{pars["radius"]}'\
        f'd{pars["divisions"]}'\
        f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}.pdf'
 plt.savefig(path)
