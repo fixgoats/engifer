@@ -100,6 +100,8 @@ positions = ax1.scatter(points[:, 0],
                         color='#ff6347')
 ax1.set_xlabel(r'x ($\mu$m)')
 ax1.set_ylabel(r'y ($\mu$m)')
+# fraction=0.046 and pad=0.04 are magic settings that just work for some reason
+# to make the colorbar the same height as the graph.
 plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
 plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
 bleh = np.zeros((nframes, samplesX), dtype=complex)
@@ -116,7 +118,7 @@ def animate_heatmap(frame):
     gpsim.step()
     rdata = normSqr(gpsim.psi).real.detach().cpu().numpy()
     kdata = gpsim.psik.detach().cpu().numpy()
-    bleh[frame, :] = kdata[samplesY//2, :]
+    bleh[frame, :] = kdata[samplesY//2 - 1, :]
     kdata = np.log(normSqr(fftshift(kdata))[255:samplesY-256, 255:samplesX-255].real + 0.1)
     im1.set_data(rdata)
     im2.set_data(kdata)
@@ -145,15 +147,49 @@ path = f'animations/penroser{pars["radius"]}'\
 
 anim.save(path, writer=FFwriter)
 
+plt.cla()
+fig, ax = plt.subplots()
+rdata = normSqr(gpsim.psi).real.detach().cpu().numpy()
+im = ax.imshow(rdata, origin='lower',
+               extent=extentr)
+plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+path = f'graphs/penroselastframer{pars["radius"]}'\
+       f'd{pars["divisions"]}'\
+       f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
+       f's{pars["sigma"]}.pdf'
+ax.set_title(r'$|\psi_r|^2$')
+ax.set_xlabel(r'x ($\mu$m)')
+ax.set_ylabel(r'y ($\mu$m)')
+plt.savefig(path)
+
+plt.cla()
+fig, ax = plt.subplots()
+kdata = normSqr(gpsim.psik).real.detach().cpu().numpy()
+kdata = fftshift(kdata)[255:samplesY-256, 255:samplesX-256]
+im = ax.imshow(np.log(kdata+1), origin='lower',
+               extent=extentk)
+plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+path = f'graphs/penroselastframek{pars["radius"]}'\
+       f'd{pars["divisions"]}'\
+       f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
+       f's{pars["sigma"]}.pdf'
+ax.set_title(r'$\ln(|\psi_k|^2 + 1)$')
+ax.set_xlabel(r'k_x ($\hbar/\mu$ m)')
+ax.set_ylabel(r'k_y ($\hbar/\mu$ m)')
+plt.savefig(path)
+
 Emax = np.pi / pars['dt']
 bleh = fftshift(ifft(bleh, axis=0))
 plt.cla()
 fig, ax = plt.subplots()
-im = ax.imshow(normSqr(bleh).real, origin='lower',
+im = ax.imshow(np.log(normSqr(bleh).real), origin='lower',
                extent=[-kxmax, kxmax, -Emax, Emax])
 path = f'graphs/penrosedispersionr{pars["radius"]}'\
        f'd{pars["divisions"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}.pdf'
+ax.set_title('Dispersion relation, logarithmic')
 plt.savefig(path)

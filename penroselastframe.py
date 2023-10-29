@@ -1,12 +1,11 @@
 import numpy as np
 import torch
 from src.solvers import SsfmGPCUDA
-from src.penrosecoords import pgrid
+from src.penrose import makeSunGrid, goldenRatio
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
-from matplotlib import animation
-from matplotlib.colors import ListedColormap
-#import argparse
+import tomllib
+import argparse
 
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
@@ -16,18 +15,26 @@ plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 # if args.output is None:
 #     exit('Need to specify filename for graph')
 
+parser = argparse.ArgumentParser()
+parser.add_argument('config')
+args = parser.parse_args()
+if args.config is None:
+    exit('Need to specify config')
+
+with open(f'{args.config}', 'rb') as f:
+    pars = tomllib.load(f)
 
 def gauss(x, y, sigmax, sigmay):
     return torch.exp(-x * x / sigmax - y * y / sigmay)
 
 
 cuda = torch.device('cuda')
-samplesX = 512
-samplesY = 512
-startX = -80  # micrometers
-endX = 80
-startY = -80
-endY = 80
+endX = pars["endX"]
+startX = pars["startX"]
+samplesX = pars["samplesX"]
+endY = pars["endY"]
+startY = pars["startY"]
+samplesY = pars["samplesY"]
 dx = (endX - startX) / samplesX
 dy = (endY - startY) / samplesY
 x = torch.arange(startX, endX, dx)
@@ -38,17 +45,15 @@ gridY, gridX = torch.meshgrid(y, x, indexing='ij')
 kxmax = np.pi / dx
 kymax = np.pi / dy
 dkx = 2 * kxmax / samplesX
-dt = 0.07
-m = 0.5
 psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 
 # Coefficients for GP equation
-alpha = 0.01
-gammalp = 2
-Gamma = 1
-G = 0.1
-R = 2
-eta = 1
+alpha = pars['alpha']
+gammalp = pars['gammalp']
+Gamma = pars['Gamma']
+G = pars['G']
+R = pars['R']
+eta = pars['eta']
 constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*gammalp
 
 
@@ -56,24 +61,22 @@ def normSqr(x):
     return x.conj() * x
 
 
-radius = 10
-divisions = 3
-pumpStrength = 3.2
-w = 1.5
-points = pgrid(radius, divisions)
-truer = np.max(np.sqrt(np.sum(points*points, axis=1)))
-print(truer)
+radius = pars['radius']
+divisions = pars['divisions']
+pumpStrength = pars['pumpStrength']
+sigma = pars['sigma']
+points = makeSunGrid(radius, divisions)
+minsep = pars["radius"] / (goldenRatio**pars["divisions"])
+pars["minsep"] = minsep
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-pumpPos = np.zeros((samplesY, samplesX))
 for p in points:
-    addition = pumpStrength*gauss(gridX - p[0], gridY - p[1], w, w)
-    pump += addition
+    pump += pumpStrength*gauss(gridX - p[0], gridY - p[1], sigma, sigma)
 
 nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 gpsim = SsfmGPCUDA(psi0=psi,
                    gridX=gridX,
                    gridY=gridY,
-                   m=m,
+                   m=pars['m'],
                    nR0=nR,
                    alpha=alpha,
                    Gamma=Gamma,
@@ -83,9 +86,9 @@ gpsim = SsfmGPCUDA(psi0=psi,
                    G=G,
                    eta=eta,
                    constV=constV,
-                   dt=dt)
+                   dt=pars['dt'])
 
-for _ in range(4000):
+for _ in range(3000):
     gpsim.step()
 
 fig, ax = plt.subplots()
@@ -93,29 +96,33 @@ fig.dpi = 300
 fig.figsize = (6.4, 3.6)
 extentr = [startX, endX, startY, endY]
 extentk = [-kxmax/2, kxmax/2, -kymax/2, kymax/2]
-im = ax.imshow(normSqr(gpsim.psi).real.cpu().detach().numpy(),
-                origin='lower',
-                extent=extentr)
+nppsi = normSqr(gpsim.psi).real.cpu().detach().numpy()
+im = ax.imshow(nppsi,
+               origin='lower',
+               extent=extentr)
 ax.set_title('$|\\psi_r|^2$')
 ax.set_xlabel(r'x ($\mu$m)')
 ax.set_ylabel(r'y ($\mu$m)')
+vmax = np.max(nppsi)
+vmin = np.min(nppsi)
+ax.set_clim(vmin, vmax)
 plt.colorbar(im, ax=ax)
 positions = ax.scatter(points[:, 0],
                        points[:, 1],
                        s=0.5,
                        linewidths=1,
                        color='#ff6347')
-plt.savefig(f'rpframer{radius}d{divisions}p{pumpStrength}w{w}.pdf')
+plt.savefig(f'rpframer{radius}d{divisions}p{pumpStrength}s{sigma}.pdf')
 plt.cla()
 fig, ax = plt.subplots()
 fig.dpi = 300
 fig.figsize = (6.4, 3.6)
 psik0 = normSqr(gpsim.psik).real.cpu().detach().numpy()
-im = ax.imshow(fftshift(psik0)[191:512-192, 191:512-192],
+im = ax.imshow(np.log(fftshift(psik0)[255:1024-256, 255:1024-256] + 1),
                origin='lower',
                extent=extentk)
 ax.set_title('$|\\psi_k|^2$')
 ax.set_xlabel(r'$k_x$ ($\hbar/\mu$m)')
 ax.set_ylabel(r'$k_y$ ($\hbar/\mu$m)')
 plt.colorbar(im, ax=ax)
-plt.savefig(f'kpframer{radius}d{divisions}p{pumpStrength}w{w}.pdf')
+plt.savefig(f'kpframer{radius}d{divisions}p{pumpStrength}s{sigma}.pdf')
