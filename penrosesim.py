@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from src.solvers import SsfmGPCUDA
+from src.solvers import SsfmGPCUDA, npnormSqr, tnormSqr
 from src.penrose import makeSunGrid, goldenRatio
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
@@ -46,9 +46,6 @@ psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
 constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
-def normSqr(x):
-    return x.conj() * x
-
 
 points = makeSunGrid(pars["radius"], pars["divisions"])
 minsep = pars["radius"] / (goldenRatio**pars["divisions"])
@@ -83,11 +80,11 @@ fig.dpi = 300
 fig.figsize = (6.4, 3.6)
 extentr = [startX, endX, startY, endY]
 extentk = [-kxmax/2, kxmax/2, -kymax/2, kymax/2]
-im1 = ax1.imshow(normSqr(gpsim.psi).real.cpu().detach().numpy(),
+im1 = ax1.imshow(npnormSqr(gpsim.psi.cpu().detach().numpy()),
                  origin='lower',
                  extent=extentr)
 ax1.set_title(r'$|\psi_r|^2, t = 0 ps$')
-psik0 = normSqr(gpsim.psik).real.cpu().detach().numpy()
+psik0 = npnormSqr(gpsim.psik.cpu().detach().numpy())
 im2 = ax2.imshow(np.log(fftshift(psik0) + 1)[255:samplesY-256, 255:samplesX-256],
                  origin='lower',
                  extent=extentk)
@@ -116,10 +113,10 @@ def init():
 
 def animate_heatmap(frame):
     gpsim.step()
-    rdata = normSqr(gpsim.psi).real.detach().cpu().numpy()
+    rdata = gpsim.psi.detach().cpu().numpy()
     kdata = gpsim.psik.detach().cpu().numpy()
-    bleh[frame, :] = kdata[samplesY//2 - 1, :]
-    kdata = np.log(normSqr(fftshift(kdata))[255:samplesY-256, 255:samplesX-255].real + 0.1)
+    bleh[frame, :] = rdata[samplesY//2 - 1, :]
+    kdata = np.log(npnormSqr(fftshift(kdata))[255:samplesY-256, 255:samplesX-255].real + 1)
     im1.set_data(rdata)
     im2.set_data(kdata)
     vmin = np.min(kdata)
@@ -149,7 +146,7 @@ anim.save(path, writer=FFwriter)
 
 plt.cla()
 fig, ax = plt.subplots()
-rdata = normSqr(gpsim.psi).real.detach().cpu().numpy()
+rdata = npnormSqr(gpsim.psi.detach().cpu().numpy())
 im = ax.imshow(rdata, origin='lower',
                extent=extentr)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -165,7 +162,7 @@ plt.savefig(path)
 
 plt.cla()
 fig, ax = plt.subplots()
-kdata = normSqr(gpsim.psik).real.detach().cpu().numpy()
+kdata = npnormSqr(gpsim.psik.detach().cpu().numpy())
 kdata = fftshift(kdata)[255:samplesY-256, 255:samplesX-256]
 im = ax.imshow(np.log(kdata+1), origin='lower',
                extent=extentk)
@@ -184,7 +181,7 @@ Emax = np.pi / pars['dt']
 bleh = fftshift(ifft(bleh, axis=0))
 plt.cla()
 fig, ax = plt.subplots()
-im = ax.imshow(np.log(normSqr(bleh).real), origin='lower',
+im = ax.imshow(np.log(npnormSqr(bleh)), origin='lower',
                extent=[-kxmax, kxmax, -Emax, Emax])
 path = f'graphs/penrosedispersionr{pars["radius"]}'\
        f'd{pars["divisions"]}'\
