@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from src.solvers import SsfmGPCUDA
+from src.solvers import SsfmGPCUDA, npnormSqr, tnormSqr, hbar
 from src.monotile import makegrid
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
@@ -25,8 +25,8 @@ def gauss(x, y, sigmax, sigmay):
 
 
 cuda = torch.device('cuda')
-endX = pars["endX"]
-startX = pars["startX"]
+endX = pars["endX"] # lengths in micrometers
+startX = pars["startX"] 
 samplesX = pars["samplesX"]
 endY = pars["endY"]
 startY = pars["startY"]
@@ -41,14 +41,10 @@ gridY, gridX = torch.meshgrid(y, x, indexing='ij')
 kxmax = np.pi / dx
 kymax = np.pi / dy
 dkx = 2 * kxmax / samplesX
-psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
+psi = 0.1 * torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 
 # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
 constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
-
-def normSqr(x):
-    return x.conj() * x
-
 
 points = makegrid(pars["scale"])
 pars["minsep"] = pars["scale"] * 0.5
@@ -60,7 +56,8 @@ for p in points:
                                        pars["sigma"])
 
 nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-gpsim = SsfmGPCUDA(psi0=psi,
+gpsim = SsfmGPCUDA(dev=cuda,
+                   psi0=psi,
                    gridX=gridX,
                    gridY=gridY,
                    m=pars["m"],
@@ -75,18 +72,19 @@ gpsim = SsfmGPCUDA(psi0=psi,
                    constV=constV,
                    dt=pars["dt"])
 
-nframes = 512
+nframes = 1024
 fps = 24
 fig, [ax1, ax2] = plt.subplots(1, 2)
 fig.dpi = 300
 fig.figsize = (6.4, 3.6)
 extentr = [startX, endX, startY, endY]
 extentk = [-kxmax/2, kxmax/2, -kymax/2, kymax/2]
-im1 = ax1.imshow(normSqr(gpsim.psi).real.cpu().detach().numpy(),
+rdata = gpsim.psi.cpu().detach().numpy()
+im1 = ax1.imshow(npnormSqr(rdata),
                  origin='lower',
                  extent=extentr)
 ax1.set_title(r'$|\psi_r|^2, t = 0 ps$')
-psik0 = normSqr(gpsim.psik).real.cpu().detach().numpy()
+psik0 = tnormSqr(gpsim.psik).real.cpu().detach().numpy()
 im2 = ax2.imshow(np.log(fftshift(psik0) + 1)[255:samplesY-256, 255:samplesX-256],
                  origin='lower',
                  extent=extentk)
@@ -103,91 +101,136 @@ ax1.set_ylabel(r'y ($\mu$m)')
 # to make the colorbar the same height as the graph.
 plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
 plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
-bleh = np.zeros((nframes, samplesX), dtype=complex)
+bleh = np.zeros((2*nframes, samplesX), dtype=complex)
 
-for _ in range(512):
+for i in range(2*nframes):
     gpsim.step()
+    rdata = gpsim.psi.detach().cpu().numpy()
+    bleh[i, :] = rdata[samplesY//2 - 1, :]
 
 
-def init():
-    return [im1, im2]
+# def init():
+#     return [im1, im2]
+# 
+# 
+# def animate_heatmap(frame):
+#     gpsim.step()
+#     rdata = gpsim.psi.detach().cpu().numpy()
+#     kdata = gpsim.psik.detach().cpu().numpy()
+#     bleh[frame, :] = rdata[samplesY//2 - 1, :]
+#     kdata = np.log(npnormSqr(fftshift(kdata))[255:samplesY-256, 255:samplesX-255].real + 1)
+#     im1.set_data(npnormSqr(rdata))
+#     im2.set_data(kdata)
+#     vmin = np.min(kdata)
+#     vmax = np.max(kdata)
+#     im2.set_clim(vmin, vmax)
+#     vmin = np.min(npnormSqr(rdata))
+#     vmax = np.max(npnormSqr(rdata))
+#     im1.set_clim(vmin, vmax)
+#     ax1.set_title(f'$|\\psi_r|^2$, t = {gpsim.t:.2f}')
+#     return [im1, im2]
+# 
+# 
+# anim = animation.FuncAnimation(fig,
+#                                animate_heatmap,
+#                                init_func=init,
+#                                frames=nframes,
+#                                blit=True)
+# FFwriter = animation.FFMpegWriter(fps=fps, metadata=pars)
+# 
+# path = f'animations/monotiler{pars["scale"]}'\
+#        f'p{pars["pumpStrength"]}'\
+#        f'n{pars["samplesX"]}'\
+#        f's{pars["sigma"]}.mp4'
+# 
+# anim.save(path, writer=FFwriter)
 
-
-def animate_heatmap(frame):
-    gpsim.step()
-    rdata = normSqr(gpsim.psi).real.detach().cpu().numpy()
-    kdata = gpsim.psik.detach().cpu().numpy()
-    bleh[frame, :] = kdata[samplesY//2 - 1, :]
-    kdata = np.log(normSqr(fftshift(kdata))[255:samplesY-256, 255:samplesX-255].real + 0.1)
-    im1.set_data(rdata)
-    im2.set_data(kdata)
-    vmin = np.min(kdata)
-    vmax = np.max(kdata)
-    im2.set_clim(vmin, vmax)
-    vmin = np.min(rdata)
-    vmax = np.max(rdata)
-    im1.set_clim(vmin, vmax)
-    ax1.set_title(f'$|\\psi_r|^2$, t = {gpsim.t:.2f}')
-    return [im1, im2]
-
-
-anim = animation.FuncAnimation(fig,
-                               animate_heatmap,
-                               init_func=init,
-                               frames=nframes,
-                               blit=True)
-FFwriter = animation.FFMpegWriter(fps=fps, metadata=pars)
-
-path = f'animations/monotiler{pars["scale"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}.mp4'
-
-anim.save(path, writer=FFwriter)
+logscale = ""
+if pars["log"]:
+    logscale = "logscale"
 
 plt.cla()
 fig, ax = plt.subplots()
-rdata = normSqr(gpsim.psi).real.detach().cpu().numpy()
-im = ax.imshow(rdata, origin='lower',
+fig.dpi = 300
+fig.figsize = (6.4, 3.6)
+rdata = gpsim.psi.detach().cpu().numpy()
+im = ax.imshow(npnormSqr(rdata), origin='lower',
                extent=extentr)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 path = f'graphs/monotilelastframerr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}.pdf'
+print(f"made r-space graph {path}")
 ax.set_title(r'$|\psi_r|^2$')
-ax.set_xlabel(r'x ($\mu$m)')
-ax.set_ylabel(r'y ($\mu$m)')
+ax.set_xlabel(r'$x$ ($\mu$m)')
+ax.set_ylabel(r'$y$ ($\mu$m)')
 plt.savefig(path)
 
 plt.cla()
 fig, ax = plt.subplots()
-kdata = normSqr(gpsim.psik).real.detach().cpu().numpy()
-kdata = fftshift(kdata)[255:samplesY-256, 255:samplesX-256]
-im = ax.imshow(np.log(kdata+1), origin='lower',
+fig.dpi = 300
+fig.figsize = (6.4, 3.6)
+kdata = gpsim.psik.detach().cpu().numpy()
+kdata = fftshift(npnormSqr(kdata))[255:samplesY-256, 255:samplesX-256]
+if pars["log"]:
+    kdata = np.log(kdata + np.exp(-10))
+
+im = ax.imshow(kdata, origin='lower',
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 path = f'graphs/monotilelastframekr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}.pdf'
-ax.set_title(r'$\ln(|\psi_k|^2 + 1)$')
-ax.set_xlabel(r'k_x ($\hbar/\mu$ m)')
-ax.set_ylabel(r'k_y ($\hbar/\mu$ m)')
+       f's{pars["sigma"]}{logscale}.pdf'
+print(f"made k-space graph {path}")
+if pars["log"]:
+    ax.set_title(r'$\ln(|\psi_k|^2 + e^{-10})$')
+else:
+    ax.set_title(r'$|\psi_k|^2$')
+ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
+ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
 plt.savefig(path)
 
-Emax = np.pi / pars['dt']
-bleh = fftshift(ifft(bleh, axis=0))
+Emax = hbar * np.pi / pars['dt']
+bleh = fftshift(fft(ifft(bleh, axis=0), axis=1))
+bleh = np.sqrt(npnormSqr(bleh))
 plt.cla()
 fig, ax = plt.subplots()
-im = ax.imshow(np.log(normSqr(bleh).real),
-               origin='lower',
-               aspect='auto',
-               extent=[-kxmax, kxmax, -Emax, Emax])
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-path = f'graphs/monotiledispersionr{pars["scale"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}.pdf'
-ax.set_title('Dispersion relation, logarithmic')
-plt.savefig(path)
+fig.dpi = 300
+fig.figsize = (6.4, 3.6)
+if pars["log"]:
+    bleh = np.log(bleh + np.exp(-10))
+
+    im = ax.imshow(bleh[nframes:2*nframes-1, :],
+                   origin='lower',
+                   aspect='auto',
+                   extent=[-kxmax, kxmax, 0, Emax])
+    vmin = np.min(bleh)
+    vmax = np.max(bleh)
+    im.set_clim(vmin, vmax)
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    path = f'graphs/monotiledispersionr{pars["scale"]}'\
+           f'p{pars["pumpStrength"]}'\
+           f'n{pars["samplesX"]}'\
+           f's{pars["sigma"]}{logscale}.pdf'
+    print(f"made dispersion graph {path}")
+    ax.set_title(f'$E(k_x)$ {logscale}')
+    ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
+    ax.set_ylabel(r'$E$ (meV)')
+    plt.savefig(path)
+else:
+    im = ax.imshow(bleh,
+                   origin='lower',
+                   aspect='auto',
+                   extent=[-kxmax, kxmax, 0, Emax])
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    path = f'graphs/monotiledispersionr{pars["scale"]}'\
+           f'p{pars["pumpStrength"]}'\
+           f'n{pars["samplesX"]}'\
+           f's{pars["sigma"]}{logscale}.pdf'
+    print(f"made dispersion graph {path}")
+    ax.set_title(f'$E(k_x)$ {logscale}')
+    ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
+    ax.set_ylabel(r'$E$ (meV)')
+    plt.savefig(path)

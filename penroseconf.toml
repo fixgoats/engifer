@@ -16,5 +16,4 @@ endX = 220
 startY = -220
 endY = 220
 m = 0.5
-log = true
 copyright = 'Public Domain'

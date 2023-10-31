@@ -7,6 +7,8 @@ from numba import jit
 import torch
 import torch.fft as tfft
 
+hbar = 6.582119569e-1 # meV * s
+
 
 @jit(nopython=True, nogil=True)
 def npnormSqr(x):
@@ -182,6 +184,7 @@ class SsfmGPCUDA:
                  'constV')
 
     def __init__(self,
+                 dev,
                  psi0,
                  gridX,
                  gridY,
@@ -196,15 +199,14 @@ class SsfmGPCUDA:
                  eta,
                  constV,
                  dt):
-        cuda = torch.device('cuda')
-        self.psi = psi0.type(dtype=torch.cfloat).to(device=cuda)
+        self.psi = psi0.type(dtype=torch.cfloat).to(device=dev)
         self.psik = tfft.fft2(self.psi)
         dx = gridX[0, 1] - gridX[0, 0]
         dy = gridY[1, 0] - gridY[0, 0]
         kxmax = np.pi / dx
         kymax = np.pi / dy
-        dkx = 2*kxmax / psi0.size(dim=0)
-        dky = 2*kymax / psi0.size(dim=1)
+        dkx = 2 * kxmax / psi0.size(dim=0)
+        dky = 2 * kymax / psi0.size(dim=1)
         kx = torch.arange(-kxmax, kxmax, dkx)
         ky = torch.arange(-kymax, kymax, dky)
         kx = tfft.fftshift(kx)
@@ -212,17 +214,17 @@ class SsfmGPCUDA:
         kxv, kyv = torch.meshgrid(kx, ky, indexing='ij')
         self.t = 0
         self.dt = dt
-        self.nR = nR0.type(dtype=torch.cfloat).to(device=cuda)
+        self.nR = nR0.type(dtype=torch.cfloat).to(device=dev)
         self.R = R
-        self.pump = pump.type(dtype=torch.cfloat).to(device=cuda)
+        self.pump = pump.type(dtype=torch.cfloat).to(device=dev)
         self.Gamma = Gamma
         self.m = m
         squareK = kxv * kxv + kyv * kyv
-        self.kTimeEvo = torch.exp(-1.0j * squareK * dt / (2 * m)).to(device=cuda)
+        self.kTimeEvo = torch.exp(-0.5j * hbar * squareK * dt / m).to(device=dev)
         self.alpha = alpha
         self.eta = eta
         self.G = G
-        self.constV = constV.to(device=cuda)
+        self.constV = constV.to(device=dev)
 
     def V(self):
         return self.constV + self.alpha * self.psiNormSqr() \
