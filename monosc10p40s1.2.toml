@@ -15,5 +15,5 @@ endX = 80
 startY = -80
 endY = 80
 m = 0.5
-log = true
+log = false
 copyright = 'Public Domain'

@@ -12,7 +12,7 @@ plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('config')
-parser.add_argument('--use-cached')
+parser.add_argument('--use-cached', action='store_true')
 args = parser.parse_args()
 if args.config is None and args.use_cached is None:
     exit('Need to specify config')
@@ -25,7 +25,7 @@ def gauss(x, y, sigmax, sigmay):
     return torch.exp(-x * x / sigmax - y * y / sigmay)
 
 
-if args.use_cached is None:
+if args.use_cached is False:
     cuda = torch.device('cuda')
     endX = pars["endX"]
     startX = pars["startX"]
@@ -153,7 +153,7 @@ if args.use_cached is None:
     np.save("kdata.npy", kdata)
     np.save("disp.npy", dispersion)
     np.save("extentr.npy", extentr)
-    np.save("extentk.npy", extentr)
+    np.save("extentk.npy", extentk)
     Emax = hbar * np.pi / pars['dt']
     extentE = [-kxmax, kxmax, 0, Emax]
     np.save("extentE.npy", extentE)
@@ -191,8 +191,11 @@ if args.use_cached is None:
     plt.savefig(path)
 
     plt.cla()
+    dispersion = fftshift(fft(ifft(dispersion, axis=0), axis=1))
+    if not pars["wneg"]:
+        start = dispersion.shape[0] // 2 - 1
+        dispersion = dispersion[start:, :]
     fig, ax = plt.subplots()
-    dispersion= fftshift(fft(ifft(dispersion, axis=0), axis=1))[nframes//2-1:nframes, :]
     im = ax.imshow(np.log(np.sqrt(npnormSqr(dispersion))),
                    aspect='auto',
                    origin='lower',
@@ -251,11 +254,12 @@ else:
     ax.set_ylabel(r'k_y ($\hbar/\mu$ m)')
     plt.savefig(path)
 
-    Emax = hbar * np.pi / pars['dt']
     plt.cla()
-    start = dispersion.shape[0] // 2 - 1
+    dispersion = fftshift(fft(ifft(dispersion, axis=0), axis=1))
+    if not pars["wneg"]:
+        start = dispersion.shape[0] // 2 - 1
+        dispersion = dispersion[start:, :]
     fig, ax = plt.subplots()
-    dispersion= fftshift(fft(ifft(dispersion, axis=0), axis=1))[start:, :]
     im = ax.imshow(np.log(np.sqrt(npnormSqr(dispersion))),
                    aspect='auto',
                    origin='lower',

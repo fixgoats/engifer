@@ -46,12 +46,21 @@ psi = 0.1 * torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
 constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
-points = makegrid(pars["scale"])
-pars["minsep"] = pars["scale"] * 0.5
+# points = makegrid(pars["scale"])
+# pars["minsep"] = pars["scale"] * 0.5
+points = np.load("monotilegrid.npy")
+condition = np.logical_and(points.real < 15,
+                           np.logical_and(points.imag < 15,
+                                np.logical_and(points.real > 7,
+                                               points.imag > 7)))
+points = np.extract(condition, points)
+pars['scale'] = 16
+points = pars['scale'] * (points - 11-11j)
+print(points)
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 for p in points:
-    pump += pars["pumpStrength"]*gauss(gridX - p[0],
-                                       gridY - p[1] - 20,
+    pump += pars["pumpStrength"]*gauss(gridX - p.real,
+                                       gridY - p.imag,
                                        pars["sigma"],
                                        pars["sigma"])
 
@@ -90,8 +99,8 @@ im2 = ax2.imshow(np.log(fftshift(psik0) + 1)[255:samplesY-256, 255:samplesX-256]
                  extent=extentk)
 ax2.set_title(r'$\ln(|\psi_k|^2 + 1)$')
 
-positions = ax1.scatter(points[:, 0],
-                        points[:, 1]+20,
+positions = ax1.scatter(points.imag,
+                        points.real,
                         s=0.5,
                         linewidths=0.1,
                         color='#ff6347')
@@ -101,9 +110,12 @@ ax1.set_ylabel(r'y ($\mu$m)')
 # to make the colorbar the same height as the graph.
 plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
 plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
-bleh = np.zeros((2*nframes, samplesX), dtype=complex)
+bleh = np.zeros((nframes, samplesX), dtype=complex)
 
-for i in range(2*nframes):
+for _ in range(50):
+    gpsim.step()
+
+for i in range(nframes):
     gpsim.step()
     rdata = gpsim.psi.detach().cpu().numpy()
     bleh[i, :] = rdata[samplesY//2 - 1, :]
@@ -157,10 +169,16 @@ rdata = gpsim.psi.detach().cpu().numpy()
 im = ax.imshow(npnormSqr(rdata), origin='lower',
                extent=extentr)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+ax.scatter(points.real,
+           points.imag,
+           s=0.5,
+           linewidths=0.1,
+           color='#ff6347')
+
 path = f'graphs/monotilelastframerr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}.pdf'
+       f's{pars["sigma"]}dt{pars["dt"]}.pdf'
 print(f"made r-space graph {path}")
 ax.set_title(r'$|\psi_r|^2$')
 ax.set_xlabel(r'$x$ ($\mu$m)')
@@ -176,13 +194,15 @@ kdata = fftshift(npnormSqr(kdata))[255:samplesY-256, 255:samplesX-256]
 if pars["log"]:
     kdata = np.log(kdata + np.exp(-10))
 
-im = ax.imshow(kdata, origin='lower',
+im = ax.imshow(kdata,
+               interpolation=None,
+               origin='lower',
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 path = f'graphs/monotilelastframekr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}{logscale}.pdf'
+       f's{pars["sigma"]}dt{pars["dt"]}{logscale}.pdf'
 print(f"made k-space graph {path}")
 if pars["log"]:
     ax.set_title(r'$\ln(|\psi_k|^2 + e^{-10})$')
@@ -202,7 +222,7 @@ fig.figsize = (6.4, 3.6)
 if pars["log"]:
     bleh = np.log(bleh + np.exp(-10))
 
-    im = ax.imshow(bleh[nframes:2*nframes-1, :],
+    im = ax.imshow(bleh[nframes//2:nframes-1, :],
                    origin='lower',
                    aspect='auto',
                    extent=[-kxmax, kxmax, 0, Emax])
@@ -213,7 +233,7 @@ if pars["log"]:
     path = f'graphs/monotiledispersionr{pars["scale"]}'\
            f'p{pars["pumpStrength"]}'\
            f'n{pars["samplesX"]}'\
-           f's{pars["sigma"]}{logscale}.pdf'
+           f's{pars["sigma"]}dt{pars["dt"]}{logscale}.pdf'
     print(f"made dispersion graph {path}")
     ax.set_title(f'$E(k_x)$ {logscale}')
     ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
@@ -228,7 +248,7 @@ else:
     path = f'graphs/monotiledispersionr{pars["scale"]}'\
            f'p{pars["pumpStrength"]}'\
            f'n{pars["samplesX"]}'\
-           f's{pars["sigma"]}{logscale}.pdf'
+           f's{pars["sigma"]}dt{pars["dt"]}{logscale}.pdf'
     print(f"made dispersion graph {path}")
     ax.set_title(f'$E(k_x)$ {logscale}')
     ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
