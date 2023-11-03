@@ -54,7 +54,6 @@ condition = np.logical_and(points.real < 15,
                                 np.logical_and(points.real > 7,
                                                points.imag > 7)))
 points = np.extract(condition, points)
-pars['scale'] = 16
 points = pars['scale'] * (points - 11-11j)
 print(points)
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
