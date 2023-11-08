@@ -7,7 +7,9 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 import tomllib
 import argparse
+from datetime import date
 
+datestamp = date.today()
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
 parser = argparse.ArgumentParser()
@@ -55,7 +57,6 @@ condition = np.logical_and(points.real < 15,
                                                points.imag > 7)))
 points = np.extract(condition, points)
 points = pars['scale'] * (points - 11-11j)
-print(points)
 pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
 for p in points:
     pump += pars["pumpStrength"]*gauss(gridX - p.real,
@@ -174,7 +175,7 @@ ax.scatter(points.real,
            linewidths=0.1,
            color='#ff6347')
 
-path = f'graphs/monotilelastframerr{pars["scale"]}'\
+path = f'graphs/{datestamp}/monotilelastframerr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{pars["dt"]}.pdf'
@@ -190,26 +191,40 @@ fig.dpi = 300
 fig.figsize = (6.4, 3.6)
 kdata = gpsim.psik.detach().cpu().numpy()
 kdata = fftshift(npnormSqr(kdata))[255:samplesY-256, 255:samplesX-256]
-if pars["log"]:
-    kdata = np.log(kdata + np.exp(-10))
-
 im = ax.imshow(kdata,
                interpolation=None,
                origin='lower',
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-path = f'graphs/monotilelastframekr{pars["scale"]}'\
+path = f'graphs/{datestamp}/monotilelastframekr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}dt{pars["dt"]}{logscale}.pdf'
+       f's{pars["sigma"]}dt{pars["dt"]}.pdf'
 print(f"made k-space graph {path}")
-if pars["log"]:
-    ax.set_title(r'$\ln(|\psi_k|^2 + e^{-10})$')
-else:
-    ax.set_title(r'$|\psi_k|^2$')
+ax.set_title(r'$|\psi_k|^2$')
 ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
 ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
 plt.savefig(path)
+
+plt.cla()
+fig, ax = plt.subplots()
+fig.dpi = 300
+fig.figsize = (6.4, 3.6)
+lnkdata = np.log(kdata + np.exp(-10))
+im = ax.imshow(lnkdata,
+               interpolation=None,
+               origin='lower',
+               extent=extentk)
+plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+path = f'graphs/{datestamp}/monotilelastframekr{pars["scale"]}'\
+       f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
+       f's{pars["sigma"]}dt{pars["dt"]}logscale.pdf'
+ax.set_title(r'$\ln(|\psi_k|^2 + e^{-10})$')
+ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
+ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
+plt.savefig(path)
+print(f"made log k-space graph {path}")
 
 Emax = hbar * np.pi / pars['dt']
 bleh = fftshift(fft(ifft(bleh, axis=0), axis=1))
@@ -218,38 +233,41 @@ plt.cla()
 fig, ax = plt.subplots()
 fig.dpi = 300
 fig.figsize = (6.4, 3.6)
-if pars["log"]:
-    bleh = np.log(bleh + np.exp(-10))
+im = ax.imshow(bleh,
+               origin='lower',
+               aspect='auto',
+               extent=[-kxmax, kxmax, 0, Emax])
+plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+path = f'graphs/{datestamp}/monotiledispersionr{pars["scale"]}'\
+       f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
+       f's{pars["sigma"]}dt{pars["dt"]}.pdf'
+ax.set_title(r'$|\rho(E, k_x)|$')
+ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
+ax.set_ylabel(r'$E$ (meV)')
+plt.savefig(path)
+print(f"made dispersion graph {path}")
 
-    im = ax.imshow(bleh[nframes//2:nframes-1, :],
-                   origin='lower',
-                   aspect='auto',
-                   extent=[-kxmax, kxmax, 0, Emax])
-    vmin = np.min(bleh)
-    vmax = np.max(bleh)
-    im.set_clim(vmin, vmax)
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    path = f'graphs/monotiledispersionr{pars["scale"]}'\
-           f'p{pars["pumpStrength"]}'\
-           f'n{pars["samplesX"]}'\
-           f's{pars["sigma"]}dt{pars["dt"]}{logscale}.pdf'
-    print(f"made dispersion graph {path}")
-    ax.set_title(f'$E(k_x)$ {logscale}')
-    ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-    ax.set_ylabel(r'$E$ (meV)')
-    plt.savefig(path)
-else:
-    im = ax.imshow(bleh,
-                   origin='lower',
-                   aspect='auto',
-                   extent=[-kxmax, kxmax, 0, Emax])
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    path = f'graphs/monotiledispersionr{pars["scale"]}'\
-           f'p{pars["pumpStrength"]}'\
-           f'n{pars["samplesX"]}'\
-           f's{pars["sigma"]}dt{pars["dt"]}{logscale}.pdf'
-    print(f"made dispersion graph {path}")
-    ax.set_title(f'$E(k_x)$ {logscale}')
-    ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-    ax.set_ylabel(r'$E$ (meV)')
-    plt.savefig(path)
+plt.cla()
+fig, ax = plt.subplots()
+fig.dpi = 300
+fig.figsize = (6.4, 3.6)
+bleh = np.log(bleh + np.exp(-10))
+
+im = ax.imshow(bleh[nframes//2:nframes-1, :],
+               origin='lower',
+               aspect='auto',
+               extent=[-kxmax, kxmax, 0, Emax])
+vmin = np.min(bleh)
+vmax = np.max(bleh)
+im.set_clim(vmin, vmax)
+plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+path = f'graphs/{datestamp}/monotiledispersionr{pars["scale"]}'\
+       f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
+       f's{pars["sigma"]}dt{pars["dt"]}logscale.pdf'
+ax.set_title(r'$ln(|\rho(E, k_x)|)$')
+ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
+ax.set_ylabel(r'$E$ (meV)')
+plt.savefig(path)
+print(f"made log dispersion graph {path}")

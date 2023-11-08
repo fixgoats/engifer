@@ -8,3 +8,4 @@ animations/
 graphs/
 *.pkl
 *.npy
+tmp/

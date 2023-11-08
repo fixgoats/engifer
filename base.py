@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from src.solvers import SsfmGPCUDA, npnormSqr, tnormSqr, hbar
-from src.penrose import makeSunGrid, goldenRatio
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
 from matplotlib import animation
@@ -51,13 +50,17 @@ if args.use_cached is False:
     # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
     constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
-    points = makeSunGrid(pars["radius"], pars["divisions"])
-    minsep = pars["radius"] / (goldenRatio**pars["divisions"])
-    pars["minsep"] = minsep
+    points = np.load("monotilegrid.npy")
+    condition = np.logical_and(points.real < 15,
+                               np.logical_and(points.imag < 15,
+                                    np.logical_and(points.real > 7,
+                                                   points.imag > 7)))
+    points = np.extract(condition, points)
+    points = pars['scale'] * (points - 11-11j)
     pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     for p in points:
-        pump += pars["pumpStrength"]*gauss(gridX - p[0],
-                                           gridY - p[1],
+        pump += pars["pumpStrength"]*gauss(gridX - p.real,
+                                           gridY - p.imag,
                                            pars["sigma"],
                                            pars["sigma"])
 
@@ -122,8 +125,8 @@ rdata = rdata[samplesY//6-1:samplesY-samplesY//6,
               samplesX//6-1:samplesX-samplesX//6]
 im = ax.imshow(npnormSqr(rdata), origin='lower',
                extent=2*extentr/3)
-ax.scatter(points[:, 0],
-           points[:, 1],
+ax.scatter(points.real,
+           points.imag,
            s=3,
            linewidths=0.1,
            color='#ff6347',
@@ -131,8 +134,7 @@ ax.scatter(points[:, 0],
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 basedir = f"graphs/{datestamp}"
 Path(basedir).mkdir(parents=True, exist_ok=True)
-name = f'penroserr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
+name = f'monotilerr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{pars["dt"]}'
@@ -151,8 +153,7 @@ fig, ax = plt.subplots()
 im = ax.imshow(kdata, origin='lower',
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = f'penrosekr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
+name = f'monotilekr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{pars["dt"]}'
@@ -168,8 +169,7 @@ fig, ax = plt.subplots()
 im = ax.imshow(np.log(kdata+np.exp(-10)), origin='lower',
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = f'penrosekr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
+name = f'monotilekr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{pars["dt"]}logscale'
@@ -190,8 +190,7 @@ im = ax.imshow(np.sqrt(npnormSqr(dispersion)),
                aspect='auto',
                origin='lower',
                extent=extentE)
-name = f'penrosedispersionr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
+name = f'monotiledispersionr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{pars["dt"]}'
@@ -208,8 +207,7 @@ im = ax.imshow(np.log(np.sqrt(npnormSqr(dispersion) + np.exp(-10))),
                aspect='auto',
                origin='lower',
                extent=extentE)
-name = f'penrosedispersionr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
+name = f'monotiledispersionr{pars["scale"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{pars["dt"]}logscale'

@@ -7,7 +7,7 @@ from numba import jit
 import torch
 import torch.fft as tfft
 
-hbar = 6.582119569e-1 # meV * s
+hbar = 6.582119569e-1  # meV * ps
 
 
 @jit(nopython=True, nogil=True)
