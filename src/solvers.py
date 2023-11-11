@@ -164,8 +164,9 @@ class SsfmGPNp:
         self.t += self.dt
 
 
-class SsfmGPCUDA:
-    __slots__ = ('psi',
+class SsfmGPGPU:
+    __slots__ = ('dev',
+                 'psi',
                  'psik',
                  'kxv',
                  'kyv',
