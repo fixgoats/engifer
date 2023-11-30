@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from src.solvers import SsfmGPCUDA, npnormSqr, tnormSqr, hbar
+from src.solvers import SsfmGPGPU, npnormSqr, hbar
 from src.penrose import makeSunGrid, goldenRatio
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
@@ -13,6 +13,8 @@ from datetime import date
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
 datestamp = date.today()
+basedir = f"graphs/{datestamp}"
+Path(basedir).mkdir(parents=True, exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('config')
 parser.add_argument('--use-cached', action='store_true')
@@ -28,14 +30,50 @@ def gauss(x, y, sigmax, sigmay):
     return torch.exp(-x * x / sigmax - y * y / sigmay)
 
 
+endX = pars["endX"]
+startX = pars["startX"]
+samplesX = pars["samplesX"]
+endY = pars["endY"]
+startY = pars["startY"]
+samplesY = pars["samplesY"]
+dt = pars["dt"]
+nframes = pars["nframes"]
+prerun = pars["prerun"]
+
+siminfo = f'r{pars["radius"]}'\
+       f'd{pars["divisions"]}'\
+       f'p{pars["pumpStrength"]}'\
+       f'n{pars["samplesX"]}'\
+       f's{pars["sigma"]}dt{dt}'\
+       f'xy{endX-startX}'
+
+
+def figBoilerplate():
+    plt.cla()
+    fig, ax = plt.subplots()
+    fig.dpi = 300
+    fig.figsize = (6.4, 3.6)
+    return fig, ax
+
+
+def imshowBoilerplate(data, filename, xlabel, ylabel, extent, title=""):
+    fig, ax = figBoilerplate()
+    im = ax.imshow(data,
+                   aspect='auto',
+                   origin='lower',
+                   interpolation='none',
+                   extent=extent)
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    name = f'{filename}{siminfo}'
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    plt.savefig(f'{basedir}/{name}.pdf')
+    print(f'Made plot {name} in {basedir}')
+
+
 if args.use_cached is False:
     cuda = torch.device('cuda')
-    endX = pars["endX"]
-    startX = pars["startX"]
-    samplesX = pars["samplesX"]
-    endY = pars["endY"]
-    startY = pars["startY"]
-    samplesY = pars["samplesY"]
     dx = (endX - startX) / samplesX
     dy = (endY - startY) / samplesY
     x = torch.arange(startX, endX, dx)
@@ -62,23 +100,22 @@ if args.use_cached is False:
                                            pars["sigma"])
 
     nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-    gpsim = SsfmGPCUDA(dev=cuda,
-                       psi0=psi,
-                       gridX=gridX,
-                       gridY=gridY,
-                       m=pars["m"],
-                       nR0=nR,
-                       alpha=pars["alpha"],
-                       Gamma=pars["Gamma"],
-                       gammalp=pars["gammalp"],
-                       R=pars["R"],
-                       pump=pump,
-                       G=pars["G"],
-                       eta=pars["eta"],
-                       constV=constV,
-                       dt=pars["dt"])
+    gpsim = SsfmGPGPU(dev=cuda,
+                      psi0=psi,
+                      gridX=gridX,
+                      gridY=gridY,
+                      m=pars["m"],
+                      nR0=nR,
+                      alpha=pars["alpha"],
+                      Gamma=pars["Gamma"],
+                      gammalp=pars["gammalp"],
+                      R=pars["R"],
+                      pump=pump,
+                      G=pars["G"],
+                      eta=pars["eta"],
+                      constV=constV,
+                      dt=dt)
 
-    nframes = 1024
     fps = 24
     fig, [ax1, ax2] = plt.subplots(1, 2)
     fig.dpi = 300
@@ -86,12 +123,20 @@ if args.use_cached is False:
     extentr = np.array([startX, endX, startY, endY])
     extentk = np.array([-kxmax/2, kxmax/2, -kymax/2, kymax/2])
     dispersion = np.zeros((nframes, samplesX), dtype=complex)
+    npolars = np.zeros(nframes + prerun)
+
+    for i in range(prerun):
+        gpsim.step()
+        rdata = gpsim.psi.detach().cpu().numpy()
+        npolars[i] = np.sum(npnormSqr(rdata))
 
     for i in range(nframes):
         gpsim.step()
         rdata = gpsim.psi.detach().cpu().numpy()
+        npolars[i + prerun] = np.sum(npnormSqr(rdata))
         dispersion[i, :] = rdata[samplesY//2 - 1, :]
 
+    npolars = npolars * dx * dy
     Path("tmp").mkdir(parents=True, exist_ok=True)
     rdata = gpsim.psi.detach().cpu().numpy()
     np.save("tmp/rdata.npy", rdata)
@@ -103,6 +148,7 @@ if args.use_cached is False:
     np.save("tmp/points.npy", points)
     Emax = hbar * np.pi / pars['dt']
     extentE = [-kxmax, kxmax, 0, Emax]
+    np.save("tmp/npolars.npy", npolars)
     np.save("tmp/extentE.npy", extentE)
 
 
@@ -114,108 +160,55 @@ else:
     extentk = np.load("tmp/extentk.npy")
     extentE = np.load("tmp/extentE.npy")
     points = np.load("tmp/points.npy")
+    npolars = np.load("tmp/npolars.npy")
     samplesY, samplesX = np.shape(rdata)
 
-plt.cla()
-fig, ax = plt.subplots()
-rdata = rdata[samplesY//6-1:samplesY-samplesY//6,
-              samplesX//6-1:samplesX-samplesX//6]
-im = ax.imshow(npnormSqr(rdata), origin='lower',
-               extent=2*extentr/3)
-ax.scatter(points[:, 0],
-           points[:, 1],
-           s=3,
-           linewidths=0.1,
-           color='#ff6347',
-           marker='x')
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-basedir = f"graphs/{datestamp}"
-Path(basedir).mkdir(parents=True, exist_ok=True)
-name = f'penroserr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}dt{pars["dt"]}'
-ax.set_title('$|\\psi_r|^2$, cropped view.\nOrange crosses represent pump centers')
-ax.set_xlabel(r'x (µm)')
-ax.set_ylabel(r'y (µm)')
-ax.set_ylim(2*extentr[2]/3, 2*extentr[3]/3)
-ax.set_xlim(2*extentr[0]/3, 2*extentr[1]/3)
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made r-space plot {name} in {basedir}')
+imshowBoilerplate(npnormSqr(rdata),
+                  filename="penroser",
+                  xlabel=r'x (µm)',
+                  ylabel=r'y (µm)',
+                  extent=extentr,
+                  title='$|\\psi_r|^2$')
 
-kdata = npnormSqr(fftshift(kdata)[255:samplesY-256, 255:samplesX-256])
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(kdata, origin='lower',
-               extent=extentk)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = f'penrosekr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}dt{pars["dt"]}'
-ax.set_title(r'$|\psi_k|^2$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made k-space plot {name} in {basedir}')
+kdata = npnormSqr(fftshift(kdata)[samplesY//4 - 1:samplesY - samplesY // 4,
+                                  samplesX//4 - 1:samplesX - samplesX//4])
+imshowBoilerplate(kdata,
+                  filename="penrosek",
+                  xlabel=r'$k_x$ ($\mu m^{-1}$)',
+                  ylabel=r'$k_y$ ($\mu m^{-1}$)',
+                  extent=extentk,
+                  title=r'$|\psi_k|^2$')
 
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(np.log(kdata+np.exp(-10)), origin='lower',
-               extent=extentk)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = f'penrosekr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}dt{pars["dt"]}logscale'
-ax.set_title(r'$\ln(|\psi_k|^2 + e^{-10})$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made logarithmic k-space plot {name} in {basedir}')
+imshowBoilerplate(np.log(kdata+np.exp(-10)),
+                  filename='penroseklog',
+                  xlabel=r'$k_x$ ($\mu m^{-1}$)',
+                  ylabel=r'$k_y$ ($\mu m^{-1}$)',
+                  extent=extentk,
+                  title=r'$\ln(|\psi_k|^2 + e^{-10})$')
 
 dispersion = fftshift(fft(ifft(dispersion, axis=0), axis=1))
 if not pars["wneg"]:
     start = dispersion.shape[0] // 2 - 1
     dispersion = dispersion[start:, :]
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(np.sqrt(npnormSqr(dispersion)),
-               aspect='auto',
-               origin='lower',
-               extent=extentE)
-name = f'penrosedispersionr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}dt{pars["dt"]}'
-ax.set_title(r'$\rho(E, k_x)$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$E$ (meV)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made dispersion relation plot {name} in {basedir}')
 
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(np.log(np.sqrt(npnormSqr(dispersion) + np.exp(-10))),
-               aspect='auto',
-               origin='lower',
-               extent=extentE)
-name = f'penrosedispersionr{pars["radius"]}'\
-       f'd{pars["divisions"]}'\
-       f'p{pars["pumpStrength"]}'\
-       f'n{pars["samplesX"]}'\
-       f's{pars["sigma"]}dt{pars["dt"]}logscale'
-ax.set_title(r'$\ln(\rho(E, k_x) + e^{-10})$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$E$ (meV)')
+imshowBoilerplate(np.sqrt(npnormSqr(dispersion)),
+                  filename='penrosedisp',
+                  xlabel=r'$k_x$ ($\mu m^{-1}$)',
+                  ylabel=r'$E$ (meV)',
+                  extent=extentk,
+                  title=r'$\rho(E, k_x)$')
+
+imshowBoilerplate(np.log(np.sqrt(npnormSqr(dispersion)) + np.exp(-10)),
+                  filename='penrosedisplog',
+                  xlabel=r'$k_x$ ($\mu m^{-1}$)',
+                  ylabel=r'$E$ (meV)',
+                  extent=extentk,
+                  title=r'$\ln(\rho(E, k_x)$ + e^{-10})')
+
+fig, ax = figBoilerplate()
+ax.plot(dt * np.arange(prerun + nframes), npolars)
+ax.set_xlabel("t (ps)")
+ax.set_ylabel("Number of polaritons")
+name = f'penrosen{siminfo}'
 plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made logarithmic dispersion relation plot {name} in {basedir}')
+print(f'Made number plot {name} in {basedir}')

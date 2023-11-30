@@ -51,9 +51,7 @@ if args.use_cached is False:
     # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
     constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
-    pump = pars["pumpStrength"] * (gauss(gridX - pars["offset1"], gridY, pars["sigma"], pars["sigma"])
-            + gauss(gridX - pars["offset2"], gridY, pars["sigma"], pars["sigma"]))
-
+    pump = pars["pumpStrength"] * (gauss(gridX, gridY, pars["sigma"], pars["sigma"]))
     nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     gpsim = SsfmGPGPU(dev=cuda,
                       psi0=psi,
