@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.linalg import norm
 import torch
 from src.solvers import SsfmGPGPU, npnormSqr, hbar
 from src.penrose import makeSunGrid, goldenRatio
@@ -8,12 +9,15 @@ from matplotlib import animation
 import tomllib
 import argparse
 from pathlib import Path
-from datetime import date
+from time import strftime, gmtime
+import os
 
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
-datestamp = date.today()
-basedir = f"graphs/{datestamp}"
+now = gmtime()
+day = strftime('%Y-%m-%d', now)
+timeofday = strftime('%H.%M', now)
+basedir = os.path.join('graphs', day, timeofday)
 Path(basedir).mkdir(parents=True, exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('config')
@@ -41,7 +45,7 @@ nframes = pars["nframes"]
 prerun = pars["prerun"]
 dx = (endX - startX) / samplesX
 dy = (endY - startY) / samplesY
-ndistances = 16
+ndistances = 20
 maxsidelength = 16
 minsidelength = 8
 dside = (maxsidelength - minsidelength) / ndistances
@@ -51,7 +55,7 @@ intermediaterun = pars["intermediaterun"]
 siminfo = f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{dt}'\
-       f'xy{endX-startX}'
+       f'xy{endX-startX}full'
 
 
 def figBoilerplate():
@@ -96,13 +100,17 @@ if args.use_cached is False:
     constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
     orgpoints = np.load("monotilegrid.npy")
-    condition = np.logical_and(orgpoints.real < 13.2,
-                    np.logical_and(orgpoints.imag < 13.2,
-                        np.logical_and(orgpoints.real > 8.3,
-                            orgpoints.imag > 8.3)))
+    condition = np.logical_and(orgpoints.real < 12.7,
+                    np.logical_and(orgpoints.imag < 12.7,
+                        np.logical_and(orgpoints.real > 8.8,
+                            orgpoints.imag > 8.8)))
     orgpoints = np.extract(condition, orgpoints)
     print(len(orgpoints))
-    scale = maxsidelength / 0.2840404230521428
+    sidelength = np.min([norm(p - q)
+                         for p in orgpoints
+                         for q in orgpoints
+                         if p != q])
+    scale = maxsidelength / sidelength
     orgpoints = scale * (orgpoints - 10.7 - 10.7j)
     pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     for p in orgpoints:
@@ -133,7 +141,7 @@ if args.use_cached is False:
 
     rdata = gpsim.psi.cpu().detach().numpy()
     imshowBoilerplate(npnormSqr(rdata),
-                      filename=f"monotilerr15",
+                      filename=f"monotilerr{maxsidelength}",
                       xlabel="x (µm)",
                       ylabel=r"y (µm)",
                       title=r"$|\psi_r|^2$",

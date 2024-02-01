@@ -94,7 +94,10 @@ if args.use_cached is False:
     # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
     constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
-    squaregrid = np.array([[sidelength0 * i - 75, sidelength0 * j - 75] for i in range(10) for j in range(10)])
+    squaregrid = np.array([[sidelength0 * i + 2 * startX / 3, sidelength0 * j + 2 * startY / 3]
+                           for i in range(10) for j in range(10)])
+    squaregrid[::2, :] += [sidelength0 / 2, 0]
+    squaregrid[:, 0] *= np.sqrt(3) / 2
     pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     for p in squaregrid:
         pump += pars["pumpStrength"]*gauss(gridX - p[0],
@@ -150,13 +153,13 @@ if args.use_cached is False:
         bleh[:, j] = sumd
         fig, ax = figBoilerplate()
         ax.plot(dt * np.arange(nframes), npolars * dx * dy)
-        name = f"squarenr{d:.1f}{siminfo}"
+        name = f"trinr{d:.1f}{siminfo}"
         plt.savefig(f"graphs/{datestamp}/{name}.pdf")
         plt.close()
         print(f"Made plot {name}")
         rdata = gpsim.psi.cpu().detach().numpy()
         imshowBoilerplate(npnormSqr(rdata),
-                          filename=f"squarer{d:.1f}",
+                          filename=f"trirr{d:.1f}",
                           xlabel="x (µm)",
                           ylabel=r"y (µm)",
                           title=r"$|\psi_r|^2$",
@@ -165,13 +168,13 @@ if args.use_cached is False:
         kdata = fftshift(kdata)[samplesY // 4 - 1:samplesY - samplesY // 4,
                                 samplesX // 4 - 1:samplesX - samplesX // 4]
         imshowBoilerplate(npnormSqr(kdata),
-                          filename=f"squarekr{d:.1f}",
+                          filename=f"trikr{d:.1f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$|\psi_k|^2$",
                           extent=[-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         imshowBoilerplate(np.log(npnormSqr(kdata) + np.exp(-20)),
-                          filename=f"squareklogr{d:.1f}",
+                          filename=f"triklogr{d:.1f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$\ln(|\psi_k|^2 + e^{-20})$",
@@ -185,13 +188,13 @@ else:
 
 ommax = hbar * np.pi / dt
 imshowBoilerplate(bleh[nframes//2-1:, ::-1],
-                  filename=f"squareintensityr{sidelength0:.1f}",
+                  filename=f"triintensityr{sidelength0:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$I(E, d)$",
                   extent=[sidelength1, sidelength0, 0, ommax])
 imshowBoilerplate(np.log(bleh[nframes//2-1:, ::-1]),
-                  filename=f"squareintensitylogr{sidelength0:.1f}",
+                  filename=f"triintensitylogr{sidelength0:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$\ln(I(E, d))$",

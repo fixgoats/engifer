@@ -8,12 +8,15 @@ from matplotlib import animation
 import tomllib
 import argparse
 from pathlib import Path
-from datetime import date
+from time import strftime, gmtime
+import os
 
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
-datestamp = date.today()
-basedir = f"graphs/{datestamp}"
+now = gmtime()
+day = strftime('%Y-%m-%d', now)
+timeofday = strftime('%H.%M', now)
+basedir = os.path.join('graphs', day, timeofday)
 Path(basedir).mkdir(parents=True, exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('config')
@@ -41,9 +44,13 @@ nframes = pars["nframes"]
 prerun = pars["prerun"]
 dx = (endX - startX) / samplesX
 dy = (endY - startY) / samplesY
-ndistances = 30
-rad0 = 20 * goldenRatio**4
-rad1 = 10 * goldenRatio**4
+ndistances = 14
+rhomblength0 = 24
+rhomblength1 = 10
+rad0 = rhomblength0 * goldenRatio**4
+rad1 = rhomblength1 * goldenRatio**4
+actualrad = 110
+radoffset = rad0 - actualrad
 dr = (rad0 - rad1) / ndistances
 rs = np.arange(rad0, rad1, -dr)
 intermediaterun = pars["intermediaterun"]
@@ -52,7 +59,7 @@ siminfo = f'd{pars["divisions"]}'\
        f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{dt}'\
-       f'xy{endX-startX}'
+       f'xy{endX-startX}smallRbigeta'
 
 
 def figBoilerplate():
@@ -80,6 +87,14 @@ def imshowBoilerplate(data, filename, xlabel, ylabel, extent, title=""):
     print(f'Made plot {name} in {basedir}')
 
 
+def filterByRadius(array, r):
+    returnarray = np.ndarray((0, 2))
+    for row in array:
+        if row[0]**2 + row[1]**2 < r**2:
+            returnarray = np.append(returnarray, [row], axis=0)
+    return returnarray
+
+
 bleh = np.ndarray((nframes, ndistances))
 if args.use_cached is False:
     cuda = torch.device('cuda')
@@ -96,7 +111,7 @@ if args.use_cached is False:
     # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
     constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
-    points = makeSunGrid(rs[0], 4)
+    points = filterByRadius(makeSunGrid(rs[0], 4), actualrad)
     print(points.shape)
     pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     for p in points:
@@ -126,14 +141,18 @@ if args.use_cached is False:
         gpsim.step()
 
     for j, r in enumerate(rs):
-        points = makeSunGrid(r, 4)
+        newpoints = ((r - radoffset) / actualrad) * points
         pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-        for p in points:
+        # psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
+        # nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
+        for p in newpoints:
             pump += pars["pumpStrength"]*gauss(gridX - p[0],
                                                gridY - p[1],
                                                pars["sigma"],
                                                pars["sigma"])
         gpsim.pump = pump.to(cuda)
+        # gpsim.psi = psi.to(cuda)
+        # gpsim.nR = nR.to(cuda)
         extentr = np.array([startX, endX, startY, endY])
         extentk = np.array([-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         dispersion = np.zeros((nframes, samplesY, samplesX), dtype=complex)
@@ -149,17 +168,18 @@ if args.use_cached is False:
 
         dispersion = fftshift(ifft(dispersion, axis=0, norm='ortho'), axes=0)
         sumd = np.sum(npnormSqr(dispersion), axis=(1, 2)) * dx * dy / ((endX - startX) * (endY - startY))
-        np.save(f"tmp/intensity{r:.0f}.npy", sumd)
+        rhomblength = r / goldenRatio**4
+        np.save(f"tmp/intensity{rhomblength:.0f}.npy", sumd)
         bleh[:, j] = sumd
         fig, ax = figBoilerplate()
         ax.plot(dt * np.arange(nframes), npolars * dx * dy)
-        name = f"penrosenr{r:.1f}{siminfo}"
-        plt.savefig(f"graphs/{datestamp}/{name}.pdf")
+        name = f"penrosenr{rhomblength:.1f}{siminfo}"
+        plt.savefig(os.path.join(basedir, f'{name}.pdf'))
         plt.close()
         print(f"Made plot {name}")
         rdata = gpsim.psi.cpu().detach().numpy()
         imshowBoilerplate(npnormSqr(rdata),
-                          filename=f"penroserr{r:.1f}",
+                          filename=f"penroserr{rhomblength:.1f}",
                           xlabel="x (µm)",
                           ylabel=r"y (µm)",
                           title=r"$|\psi_r|^2$",
@@ -168,13 +188,13 @@ if args.use_cached is False:
         kdata = fftshift(kdata)[samplesY // 4 - 1:samplesY - samplesY // 4,
                                 samplesX // 4 - 1:samplesX - samplesX // 4]
         imshowBoilerplate(npnormSqr(kdata),
-                          filename=f"penrosekr{r:.1f}",
+                          filename=f"penrosekr{rhomblength:.1f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$|\psi_k|^2$",
                           extent=[-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         imshowBoilerplate(np.log(npnormSqr(kdata) + np.exp(-20)),
-                          filename=f"penroseklogr{r:.1f}",
+                          filename=f"penroseklogr{rhomblength:.1f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$\ln(|\psi_k|^2 + e^{-20})$",
@@ -183,19 +203,20 @@ if args.use_cached is False:
 
 else:
     for i in rs:
-        sumd = np.load(f"tmp/intensity{i:.1f}.npy")
+        rhomblength = i / goldenRatio**4
+        sumd = np.load(f"tmp/intensity{rhomblength:.1f}.npy")
         bleh[:, i] = sumd
 
 ommax = hbar * np.pi / dt
-imshowBoilerplate(bleh[nframes//2-1:],
-                  filename=f"penroseintensityr{rad0:.1f}",
+imshowBoilerplate(bleh[nframes//2-1:nframes - nframes // 4, ::-1],
+                  filename=f"penroseintensityr{actualrad:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$I(E, d)$",
-                  extent=[30, 10, 0, ommax])
-imshowBoilerplate(np.log(bleh[nframes//2-1:]),
-                  filename=f"penroseintensitylogr{rad0:.1f}",
+                  extent=[rhomblength1, rhomblength0, 0, ommax/2])
+imshowBoilerplate(np.log(bleh[nframes//2-1:nframes - nframes // 4, ::-1]),
+                  filename=f"penroseintensitylogr{actualrad:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$\ln(I(E, d))$",
-                  extent=[30, 10, 0, ommax])
+                  extent=[rhomblength1, rhomblength0, 0, ommax/2])
