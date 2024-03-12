@@ -75,7 +75,7 @@ if args.use_cached is False:
     fig.dpi = 300
     fig.figsize = (6.4, 3.6)
     extentr = np.array([startX, endX, startY, endY])
-    extentk = np.array([-kxmax/2, kxmax/2, -kymax/2, kymax/2])
+    extentk = np.array([-kxmax/3, kxmax/3, -kymax/3, kymax/3])
     dispersion = np.zeros((nframes, samplesX), dtype=complex)
 
     for _ in range(pars["prerun"]):
@@ -127,16 +127,20 @@ plt.savefig(f'{basedir}/{name}.pdf')
 plt.savefig(f'{basedir}/{name}.png')
 print(f'Made r-space plot {name} in {basedir}')
 
-startky = samplesY // 4 - 1
-endky = samplesY - samplesY // 4
-startkx = samplesX // 4 - 1
-endkx = samplesX - samplesX // 4
+startky = samplesY // 3 - 1
+endky = samplesY - samplesY // 3
+startkx = samplesX // 3 - 1
+endkx = samplesX - samplesX // 3
 kdata = npnormSqr(fftshift(kdata)[startky:endky, startkx:endky])
 plt.cla()
 fig, ax = plt.subplots()
 im = ax.imshow(kdata, origin='lower',
+               interpolation=None,
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+ax.plot(np.arange(-kxmax/3, kxmax/3, dkx),
+        1.6*np.ones(len(np.arange(-kxmax/3, kxmax/3, dkx))),
+        color='red')
 name = 'examplekplot'
 ax.set_title(r'$|\psi_k|^2$')
 ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
@@ -148,6 +152,7 @@ print(f'Made k-space plot {name} in {basedir}')
 plt.cla()
 fig, ax = plt.subplots()
 im = ax.imshow(np.log(kdata+np.exp(-10)), origin='lower',
+               interpolation=None,
                extent=extentk)
 plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 name = 'examplelogkplot'
@@ -164,6 +169,7 @@ dispersion = dispersion[start:, :]
 plt.cla()
 fig, ax = plt.subplots()
 im = ax.imshow(np.sqrt(npnormSqr(dispersion)),
+               interpolation=None,
                aspect='auto',
                origin='lower',
                extent=extentE)

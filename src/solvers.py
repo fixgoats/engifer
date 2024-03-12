@@ -167,9 +167,12 @@ class SsfmGPNp:
 class SsfmGPGPU:
     __slots__ = ('dev',
                  'psi',
+                 'n',
                  'psik',
                  'kxv',
                  'kyv',
+                 'gridX',
+                 'gridY',
                  'm',
                  'nR',
                  'dt',
@@ -201,7 +204,10 @@ class SsfmGPGPU:
                  constV,
                  dt):
         self.psi = psi0.type(dtype=torch.cfloat).to(device=dev)
+        self.n = gridX.shape[0]
         self.psik = tfft.fft2(self.psi)
+        self.gridX = gridX.type(dtype=torch.cfloat).to(device=dev)
+        self.gridY = gridY.type(dtype=torch.cfloat).to(device=dev)
         dx = gridX[0, 1] - gridX[0, 0]
         dy = gridY[1, 0] - gridY[0, 0]
         kxmax = np.pi / dx
@@ -213,6 +219,8 @@ class SsfmGPGPU:
         kx = tfft.fftshift(kx)
         ky = tfft.fftshift(ky)
         kxv, kyv = torch.meshgrid(kx, ky, indexing='ij')
+        self.kxv = kxv.to(device=dev)
+        self.kyv = kyv.to(device=dev)
         self.t = 0
         self.dt = dt
         self.nR = nR0.type(dtype=torch.cfloat).to(device=dev)
@@ -248,13 +256,19 @@ class SsfmGPGPU:
 
     def step(self):
         self.halfRStepPsi()
-        tfft.fft2(self.psi, out=self.psik, norm='ortho')
+        tfft.fft2(self.psi, out=self.psik)
         self.psik = self.psik * self.kTimeEvo
-        tfft.ifft2(self.psik, out=self.psi, norm='ortho')
+        tfft.ifft2(self.psik, out=self.psi)
         self.halfRStepNR()
         self.halfRStepPsi()
         self.halfRStepNR()
         self.t += self.dt
+
+    def angmom(self):
+        psiykx = tfft.fftshift(tfft.fft(tfft.fftshift(self.psi, dim=0), dim=0), dim=0)
+        psixky = tfft.fftshift(tfft.fft(tfft.fftshift(self.psi, dim=1), dim=1), dim=1)
+        return torch.sum(psixky.conj() * self.gridX * self.kyv * psixky
+                         - psiykx.conj() * self.gridY * self.kxv * psiykx) / self.n
 
 
 class TestingSsfmGPCUDA:
