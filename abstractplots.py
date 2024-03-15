@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.linalg import norm
 import torch
-from src.solvers import SsfmGPGPU, npnormSqr
+from src.solvers import SsfmGPGPU, npnormSqr, smoothnoise
 from src.penrose import makeSunGrid, goldenRatio
 from numpy.fft import fft, ifft, fftshift
 import matplotlib.pyplot as plt
@@ -77,15 +77,15 @@ def imshowBoilerplate(data, filename, xlabel, ylabel, extent, title=""):
 
 
 cuda = torch.device('cuda')
-x = torch.arange(startX, endX, dx)
-y = torch.arange(startY, endY, dy)
-x = x.type(dtype=torch.cfloat)
-y = y.type(dtype=torch.cfloat)
+x = torch.arange(startX, endX, dx).type(dtype=torch.cfloat)
+y = torch.arange(startY, endY, dy).type(dtype=torch.cfloat)
+nx = x.numpy()
+nxv, nyv = np.meshgrid(nx, nx)
 gridY, gridX = torch.meshgrid(y, x, indexing='ij')
 kxmax = np.pi / dx
 kymax = np.pi / dy
 dkx = 2 * kxmax / samplesX
-psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
+psi = torch.from_numpy(smoothnoise(nxv, nyv))
 
 # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
 constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))

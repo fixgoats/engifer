@@ -2,15 +2,16 @@
 import numpy as np
 from scipy.fft import fft, ifft, fft2, ifft2, fftshift
 from scipy.linalg import expm
+from scipy.signal import convolve2d
 import scipy.sparse as sps
-from numba import jit
+from numba import vectorize, float64, complex128
 import torch
 import torch.fft as tfft
 
 hbar = 6.582119569e-1  # meV * ps
 
 
-@jit(nopython=True, nogil=True)
+@vectorize([float64(complex128)])
 def npnormSqr(x):
     return x.real * x.real + x.imag * x.imag
 
@@ -19,7 +20,16 @@ def tnormSqr(x):
     return x.conj() * x
 
 
-@jit(nopython=True, nogil=True)
+def smoothnoise(xv, yv):
+    random = np.random.uniform(-1, 1, np.shape(xv)) + 1j * np.random.uniform(-1, 1, np.shape(xv))
+    krange = np.linspace(-2, 2, num=21)
+    kbasex, kbasey = np.meshgrid(krange, krange)
+    kernel = gauss(kbasex, kbasey)
+    kernel /= np.sum(kernel)
+    output = convolve2d(random, kernel, mode='same')
+    return output / np.sqrt(np.sum(npnormSqr(output)))
+
+
 def gauss(x, y, a=1, scale=1):
     return scale * np.exp(-(x * x + y * y)/a)
 
