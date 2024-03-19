@@ -98,12 +98,26 @@ def smoothnoise(xv):
     return output / np.sqrt(np.sum(npnormSqr(output)))
 
 
-rhombus = torch.tensor([
+thinrhombus = torch.tensor([
     [0, -np.sin(np.radians(72))],
     [np.cos(np.radians(72)), 0],
     [np.cos(np.radians(108)), 0],
     [0, np.sin(np.radians(72))]
     ])
+
+thickrhombus = torch.tensor([
+    [0, -np.sin(np.radians(36))],
+    [np.cos(np.radians(36)), 0],
+    [np.cos(np.radians(144)), 0],
+    [0, np.sin(np.radians(36))]
+    ])
+
+rhombus = []
+kind = pars["type"]
+if kind == "thick":
+    rhombus = thickrhombus
+else:
+    rhombus = thinrhombus
 
 
 bleh = np.ndarray((nframes, ndistances))
@@ -182,13 +196,13 @@ if args.use_cached is False:
         bleh[:, j] = npnormSqr(spectrum) / np.max(npnormSqr(spectrum))
         fig, ax = figBoilerplate()
         ax.plot(dt * np.arange(nframes), npolars * dx * dy)
-        name = f"thinrhombusnr{r:.3f}{siminfo}"
+        name = f"{kind}nr{r:.3f}{siminfo}"
         plt.savefig(os.path.join(basedir, f'{name}.pdf'))
         plt.close()
         print(f"Made plot {name}")
         rdata = gpsim.psi.cpu().detach().numpy()
         imshowBoilerplate(npnormSqr(rdata),
-                          filename=f"thinrhombusrr{r:.3f}",
+                          filename=f"{kind}rr{r:.3f}",
                           xlabel="x (µm)",
                           ylabel=r"y (µm)",
                           title=r"$|\psi_r|^2$",
@@ -197,13 +211,13 @@ if args.use_cached is False:
         kdata = fftshift(kdata)[samplesY // 4 - 1:samplesY - samplesY // 4,
                                 samplesX // 4 - 1:samplesX - samplesX // 4]
         imshowBoilerplate(npnormSqr(kdata),
-                          filename=f"thinrhombuskr{r:.3f}",
+                          filename=f"{kind}kr{r:.3f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$|\psi_k|^2$",
                           extent=[-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         imshowBoilerplate(np.log(npnormSqr(kdata) + np.exp(-20)),
-                          filename=f"thinrhombusklogr{r:.3f}",
+                          filename=f"{kind}klogr{r:.3f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$\ln(|\psi_k|^2 + e^{-20})$",
@@ -216,14 +230,14 @@ else:
 
 ommax = hbar * np.pi / dt
 imshowBoilerplate(bleh[int(nframes*0.5):int(0.55*nframes), ::-1],
-                  filename=f"thinrhombusintensityr{rhomblength0:.1f}",
+                  filename=f"{kind}intensityr{rhomblength0:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$I(E, d)$",
                   extent=[rhomblength1, rhomblength0, 0, ommax/10])
 
 imshowBoilerplate(np.log(bleh[int(nframes*0.5):int(0.55*nframes), ::-1]),
-                  filename=f"thinrhombusintensitylogr{rhomblength0:.1f}",
+                  filename=f"{kind}intensitylogr{rhomblength0:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$\ln(I(E, d))$",
