@@ -41,15 +41,15 @@ samplesY = pars["samplesY"]
 dt = pars["dt"]
 nframes = pars["nframes"]
 prerun = pars["prerun"]
+intermediaterun = pars["intermediaterun"]
 dx = (endX - startX) / samplesX
 dy = (endY - startY) / samplesY
-ndistances = 14
-rhomblength0 = 24
-rhomblength1 = 10
-rs = np.linspace(rhomblength0, rhomblength1, 30)
+ndistances = pars["ndistances"]
+rhomblength0 = pars["rhomblength0"]
+rhomblength1 = pars["rhomblength1"]
+rs = np.linspace(rhomblength0, rhomblength1, ndistances)
 
-siminfo = 'rhombus'\
-       f'p{pars["pumpStrength"]}'\
+siminfo = f'p{pars["pumpStrength"]}'\
        f'n{pars["samplesX"]}'\
        f's{pars["sigma"]}dt{dt}'\
        f'xy{endX-startX}smallRbigeta'
@@ -84,22 +84,27 @@ def gauss(x, y, sigmax, sigmay):
     return torch.exp(-x * x / sigmax - y * y / sigmay)
 
 
+def npgauss(x, y, sigmax, sigmay):
+    return np.exp(-x * x / sigmax - y * y / sigmay)
+
+
 def smoothnoise(xv):
     random = np.random.uniform(-1, 1, np.shape(xv)) + 1j * np.random.uniform(-1, 1, np.shape(xv))
     krange = np.linspace(-2, 2, num=21)
     kbasex, kbasey = np.meshgrid(krange, krange)
-    kernel = gauss(kbasex, kbasey, 1, 1)
+    kernel = npgauss(kbasex, kbasey, 1, 1)
     kernel /= np.sum(kernel)
     output = convolve2d(random, kernel, mode='same')
     return output / np.sqrt(np.sum(npnormSqr(output)))
 
 
-rhombus = np.array([
-    [0, 0],
-    [np.cos(np.radians(36)), np.sin(np.radians(36))],
-    [np.cos(np.radians(144)), np.sin(np.radians(144))],
-    [0, 2*np.sin(np.radians(144))]
+rhombus = torch.tensor([
+    [0, -np.sin(np.radians(72))],
+    [np.cos(np.radians(72)), 0],
+    [np.cos(np.radians(108)), 0],
+    [0, np.sin(np.radians(72))]
     ])
+
 
 bleh = np.ndarray((nframes, ndistances))
 if args.use_cached is False:
@@ -108,12 +113,17 @@ if args.use_cached is False:
     gridY, gridX = np.meshgrid(x, x, indexing='ij')
     kxmax = np.pi / dx
     kymax = np.pi / dy
+    damping = np.cosh((gridX*gridX + gridY*gridY)/1000) - 1
+    imshowBoilerplate(damping.real, "dampingpotential", "x", "y", [startX, endX, startY, endY])
     dkx = 2 * kxmax / samplesX
-    psi = 0.1*torch.from_numpy(smoothnoise(gridX))
+    psi = torch.from_numpy(smoothnoise(gridX))
 
     # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
-    constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
 
+    gridX = torch.from_numpy(gridX)
+    gridY = torch.from_numpy(gridY)
+    constV = -0.5j*(pars["gammalp"]*torch.ones((samplesY, samplesX))
+                    + torch.from_numpy(damping))
     pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     for p in rhomblength0*rhombus:
         pump += pars["pumpStrength"]*gauss(gridX - p[0],
@@ -123,9 +133,9 @@ if args.use_cached is False:
 
     nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     gpsim = SsfmGPGPU(dev=cuda,
+                      gridX=gridX,
+                      gridY=gridY,
                       psi0=psi,
-                      gridX=torch.from_numpy(gridX),
-                      gridY=torch.from_numpy(gridY),
                       m=pars["m"],
                       nR0=nR,
                       alpha=pars["alpha"],
@@ -158,7 +168,7 @@ if args.use_cached is False:
         extentk = np.array([-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         spectrum = np.zeros(nframes, dtype=complex)
 
-        for _ in range(pars["intermediaterun"]):
+        for _ in range(intermediaterun):
             gpsim.step()
 
         for i in range(nframes):
@@ -168,16 +178,17 @@ if args.use_cached is False:
             spectrum[i] = np.sum(rdata)
 
         spectrum = fftshift(ifft(spectrum))
-        np.save(f"tmp/intensity{r:.1f}.npy", spectrum)
+        np.save(f"tmp/spectrum{r:.3f}.npy", spectrum)
+        bleh[:, j] = npnormSqr(spectrum) / np.max(npnormSqr(spectrum))
         fig, ax = figBoilerplate()
         ax.plot(dt * np.arange(nframes), npolars * dx * dy)
-        name = f"penrosenr{rhomblength:.1f}{siminfo}"
+        name = f"thinrhombusnr{r:.3f}{siminfo}"
         plt.savefig(os.path.join(basedir, f'{name}.pdf'))
         plt.close()
         print(f"Made plot {name}")
         rdata = gpsim.psi.cpu().detach().numpy()
         imshowBoilerplate(npnormSqr(rdata),
-                          filename=f"penroserr{rhomblength:.1f}",
+                          filename=f"thinrhombusrr{r:.3f}",
                           xlabel="x (µm)",
                           ylabel=r"y (µm)",
                           title=r"$|\psi_r|^2$",
@@ -186,35 +197,34 @@ if args.use_cached is False:
         kdata = fftshift(kdata)[samplesY // 4 - 1:samplesY - samplesY // 4,
                                 samplesX // 4 - 1:samplesX - samplesX // 4]
         imshowBoilerplate(npnormSqr(kdata),
-                          filename=f"penrosekr{rhomblength:.1f}",
+                          filename=f"thinrhombuskr{r:.3f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$|\psi_k|^2$",
                           extent=[-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         imshowBoilerplate(np.log(npnormSqr(kdata) + np.exp(-20)),
-                          filename=f"penroseklogr{rhomblength:.1f}",
+                          filename=f"thinrhombusklogr{r:.3f}",
                           xlabel="$k_x$ (µ$m^{-1}$)",
                           ylabel=r"$k_y$ (µ$m^{-1}$)",
                           title=r"$\ln(|\psi_k|^2 + e^{-20})$",
                           extent=[-kxmax/2, kxmax/2, -kymax/2, kymax/2])
-
-
 else:
     for i in rs:
-        rhomblength = i / goldenRatio**4
+        rhomblength = i
         sumd = np.load(f"tmp/intensity{rhomblength:.1f}.npy")
         bleh[:, i] = sumd
 
 ommax = hbar * np.pi / dt
-imshowBoilerplate(bleh[nframes//2-1:nframes - nframes // 4, ::-1],
-                  filename=f"penroseintensityr{actualrad:.1f}",
+imshowBoilerplate(bleh[int(nframes*0.5):int(0.55*nframes), ::-1],
+                  filename=f"thinrhombusintensityr{rhomblength0:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$I(E, d)$",
-                  extent=[rhomblength1, rhomblength0, 0, ommax/2])
-imshowBoilerplate(np.log(bleh[nframes//2-1:nframes - nframes // 4, ::-1]),
-                  filename=f"penroseintensitylogr{actualrad:.1f}",
+                  extent=[rhomblength1, rhomblength0, 0, ommax/10])
+
+imshowBoilerplate(np.log(bleh[int(nframes*0.5):int(0.55*nframes), ::-1]),
+                  filename=f"thinrhombusintensitylogr{rhomblength0:.1f}",
                   xlabel="d (rhombii side length) (µm)",
                   ylabel=r"E (meV)",
                   title=r"$\ln(I(E, d))$",
-                  extent=[rhomblength1, rhomblength0, 0, ommax/2])
+                  extent=[rhomblength1, rhomblength0, 0, ommax/10])
