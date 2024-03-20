@@ -99,33 +99,28 @@ def smoothnoise(xv):
     return output / np.sqrt(np.sum(npnormSqr(output)))
 
 
-thinrhombus = torch.tensor([
-    [0, -np.sin(np.radians(72))],
-    [np.cos(np.radians(72)), 0],
-    [np.cos(np.radians(108)), 0],
-    [0, np.sin(np.radians(72))]
+basis = np.array([
+    [np.cos(i * np.pi / 5), np.sin(i * np.pi / 5)]
+    for i in range(10)
     ])
 
-thickrhombus = torch.tensor([
-    [0, -np.sin(np.radians(36))],
-    [np.cos(np.radians(36)), 0],
-    [np.cos(np.radians(144)), 0],
-    [0, np.sin(np.radians(36))]
+thinthin = np.array([
+    [0, 0],
+    basis[2],
+    basis[3],
+    basis[2] + basis[3],
+    basis[2] + basis[1],
+    basis[1]
     ])
 
-rhombus = []
-kind = pars["type"]
-if kind == "thick":
-    rhombus = thickrhombus
-else:
-    rhombus = thinrhombus
-
+thinthin -= np.mean(thinthin, axis=0)
+kind = "thinthin"
 
 bleh = np.ndarray((nframes, ndistances))
 if args.use_cached is False:
     cuda = torch.device('cuda')
     x = np.arange(startX, endX, dx).astype(np.complex64)
-    gridY, gridX = np.meshgrid(x, x, indexing='ij')
+    gridX, gridY = np.meshgrid(x, x, indexing='ij')
     kxmax = np.pi / dx
     kymax = np.pi / dy
     damping = np.cosh((gridX*gridX + gridY*gridY)/1000) - 1
@@ -135,22 +130,22 @@ if args.use_cached is False:
 
     # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
 
-    gridX = torch.from_numpy(gridX)
-    gridY = torch.from_numpy(gridY)
-    # constV = -0.5j*(pars["gammalp"]*torch.ones((samplesY, samplesX))
-    #                 + torch.from_numpy(damping))
-    constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
+    xv = torch.from_numpy(gridX)
+    yv = torch.from_numpy(gridY)
+    constV = -0.5j*(pars["gammalp"]*torch.ones((samplesY, samplesX))
+                    + torch.from_numpy(damping))
+    #constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
     pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-    for p in rhomblength0*rhombus:
-        pump += pars["pumpStrength"]*gauss(gridX - p[0],
-                                           gridY - p[1],
+    for p in rhomblength0*thinthin:
+        pump += pars["pumpStrength"]*gauss(xv - p[0],
+                                           yv - p[1],
                                            pars["sigma"],
                                            pars["sigma"])
 
     nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
     gpsim = SsfmGPGPU(dev=cuda,
-                      gridX=gridX,
-                      gridY=gridY,
+                      gridX=xv,
+                      gridY=yv,
                       psi0=psi,
                       m=pars["m"],
                       nR0=nR,
@@ -169,12 +164,12 @@ if args.use_cached is False:
 
     for j, r in enumerate(rs):
         pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-        newpoints = r * rhombus
+        newpoints = r * thinthin
         # psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
         # nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
         for p in newpoints:
-            pump += pars["pumpStrength"]*gauss(gridX - p[0],
-                                               gridY - p[1],
+            pump += pars["pumpStrength"]*gauss(xv - p[0],
+                                               yv - p[1],
                                                pars["sigma"],
                                                pars["sigma"])
         gpsim.pump = pump.to(cuda)

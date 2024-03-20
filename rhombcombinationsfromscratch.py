@@ -42,7 +42,6 @@ samplesY = pars["samplesY"]
 dt = pars["dt"]
 nframes = pars["nframes"]
 prerun = pars["prerun"]
-intermediaterun = pars["intermediaterun"]
 dx = (endX - startX) / samplesX
 dy = (endY - startY) / samplesY
 ndistances = pars["ndistances"]
@@ -99,92 +98,83 @@ def smoothnoise(xv):
     return output / np.sqrt(np.sum(npnormSqr(output)))
 
 
-thinrhombus = torch.tensor([
-    [0, -np.sin(np.radians(72))],
-    [np.cos(np.radians(72)), 0],
-    [np.cos(np.radians(108)), 0],
-    [0, np.sin(np.radians(72))]
+basis = np.array([
+    [np.cos(i * np.pi / 5), np.sin(i * np.pi / 5)]
+    for i in range(10)
     ])
 
-thickrhombus = torch.tensor([
-    [0, -np.sin(np.radians(36))],
-    [np.cos(np.radians(36)), 0],
-    [np.cos(np.radians(144)), 0],
-    [0, np.sin(np.radians(36))]
+thinthin = np.array([
+    [0, 0],
+    basis[2],
+    basis[3],
+    basis[2] + basis[3],
+    basis[2] + basis[1],
+    basis[1]
     ])
 
-rhombus = []
-kind = pars["type"]
-if kind == "thick":
-    rhombus = thickrhombus
-else:
-    rhombus = thinrhombus
+thinthin -= np.mean(thinthin, axis=0)
 
+thinthickthin = np.array([
+    [0, 0],
+    basis[1],
+    basis[4],
+    basis[1] + basis[4],
+    basis[0],
+    basis[1] + basis[0],
+    basis[5],
+    basis[5] + basis[4]
+    ])
+
+thinthickthin -= np.mean(thinthickthin, axis=0)
+
+kind = "thinthickthin"
 
 bleh = np.ndarray((nframes, ndistances))
 if args.use_cached is False:
     cuda = torch.device('cuda')
     x = np.arange(startX, endX, dx).astype(np.complex64)
-    gridY, gridX = np.meshgrid(x, x, indexing='ij')
+    gridX, gridY = np.meshgrid(x, x, indexing='ij')
     kxmax = np.pi / dx
     kymax = np.pi / dy
     damping = np.cosh((gridX*gridX + gridY*gridY)/1000) - 1
     imshowBoilerplate(damping.real, "dampingpotential", "x", "y", [startX, endX, startY, endY])
     dkx = 2 * kxmax / samplesX
-    psi = torch.from_numpy(smoothnoise(gridX))
 
-    # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
+    xv = torch.from_numpy(gridX)
+    yv = torch.from_numpy(gridY)
+    constV = -0.5j * (pars["gammalp"]*torch.ones((samplesY, samplesX))
+                      + torch.from_numpy(damping))
 
-    gridX = torch.from_numpy(gridX)
-    gridY = torch.from_numpy(gridY)
-    # constV = -0.5j*(pars["gammalp"]*torch.ones((samplesY, samplesX))
-    #                 + torch.from_numpy(damping))
-    constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
-    pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-    for p in rhomblength0*rhombus:
-        pump += pars["pumpStrength"]*gauss(gridX - p[0],
-                                           gridY - p[1],
-                                           pars["sigma"],
-                                           pars["sigma"])
-
-    nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-    gpsim = SsfmGPGPU(dev=cuda,
-                      gridX=gridX,
-                      gridY=gridY,
-                      psi0=psi,
-                      m=pars["m"],
-                      nR0=nR,
-                      alpha=pars["alpha"],
-                      Gamma=pars["Gamma"],
-                      gammalp=pars["gammalp"],
-                      R=pars["R"],
-                      pump=pump,
-                      G=pars["G"],
-                      eta=pars["eta"],
-                      constV=constV,
-                      dt=dt)
     npolars = np.zeros(nframes)
-    for k in range(prerun):
-        gpsim.step()
-
     for j, r in enumerate(rs):
+        psi = torch.from_numpy(smoothnoise(gridX))
+        nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
         pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-        newpoints = r * rhombus
-        # psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
-        # nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-        for p in newpoints:
-            pump += pars["pumpStrength"]*gauss(gridX - p[0],
-                                               gridY - p[1],
+        for p in r*thinthickthin:
+            pump += pars["pumpStrength"]*gauss(xv - p[0],
+                                               yv - p[1],
                                                pars["sigma"],
                                                pars["sigma"])
-        gpsim.pump = pump.to(cuda)
-        # gpsim.psi = psi.to(cuda)
-        # gpsim.nR = nR.to(cuda)
+        gpsim = SsfmGPGPU(dev=cuda,
+                          gridX=xv,
+                          gridY=yv,
+                          psi0=psi,
+                          m=pars["m"],
+                          nR0=nR,
+                          alpha=pars["alpha"],
+                          Gamma=pars["Gamma"],
+                          gammalp=pars["gammalp"],
+                          R=pars["R"],
+                          pump=pump,
+                          G=pars["G"],
+                          eta=pars["eta"],
+                          constV=constV,
+                          dt=dt)
         extentr = np.array([startX, endX, startY, endY])
         extentk = np.array([-kxmax/2, kxmax/2, -kymax/2, kymax/2])
         spectrum = np.zeros(nframes, dtype=complex)
 
-        for _ in range(intermediaterun):
+        for _ in range(prerun):
             gpsim.step()
 
         for i in range(nframes):

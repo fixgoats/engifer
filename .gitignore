@@ -9,3 +9,4 @@ graphs/
 *.pkl
 *.npy
 tmp/
+research/

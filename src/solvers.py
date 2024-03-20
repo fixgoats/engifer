@@ -218,8 +218,8 @@ class SsfmGPGPU:
         self.psik = tfft.fft2(self.psi)
         self.gridX = gridX.type(dtype=torch.cfloat).to(device=dev)
         self.gridY = gridY.type(dtype=torch.cfloat).to(device=dev)
-        dx = gridX[0, 1] - gridX[0, 0]
-        dy = gridY[1, 0] - gridY[0, 0]
+        dx = gridX[1, 0] - gridX[0, 0]
+        dy = gridY[0, 1] - gridY[0, 0]
         kxmax = np.pi / dx
         kymax = np.pi / dy
         dkx = 2 * kxmax / psi0.size(dim=0)
