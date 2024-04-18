@@ -42,7 +42,7 @@ if args.use_cached is False:
     y = torch.arange(startY, endY, dy)
     x = x.type(dtype=torch.cfloat)
     y = y.type(dtype=torch.cfloat)
-    gridY, gridX = torch.meshgrid(y, x, indexing='ij')
+    gridX, gridY = torch.meshgrid(y, x, indexing='ij')
     kxmax = np.pi / dx
     kymax = np.pi / dy
     dkx = 2 * kxmax / samplesX

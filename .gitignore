@@ -8,5 +8,6 @@ animations/
 graphs/
 *.pkl
 *.npy
+*.zip
 tmp/
 research/
