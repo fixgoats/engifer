@@ -1,12 +1,14 @@
 import cmath
 import math
+
 import numpy as np
+from numba import float64, njit
 
 goldenRatio = (1 + math.sqrt(5)) / 2
 
 
 class Triangle:
-    __slots__ = ('kind', 'a', 'b', 'c')
+    __slots__ = ("kind", "a", "b", "c")
 
     def __init__(self, kind, a, b, c):
         self.kind = kind
@@ -30,9 +32,11 @@ def subdivide(triangles):
         else:
             q = t.b + (t.a - t.b) / goldenRatio
             r = t.b + (t.c - t.b) / goldenRatio
-            result += [Triangle(1, r, t.c, t.a),
-                       Triangle(1, q, r, t.b),
-                       Triangle(0, r, q, t.a)]
+            result += [
+                Triangle(1, r, t.c, t.a),
+                Triangle(1, q, r, t.b),
+                Triangle(0, r, q, t.a),
+            ]
     return result
 
 
@@ -47,17 +51,28 @@ def makeSunGrid(radius, steps):
     for _ in range(steps):
         triangles = subdivide(triangles)
     for t in triangles:
-        if not any([all(np.isclose(v, np.array([t.a.real, t.a.imag]), atol=0.01)) for v in s]):
+        if not any(
+            [all(np.isclose(v, np.array([t.a.real, t.a.imag]), atol=0.01)) for v in s]
+        ):
             s = np.concatenate((s, [[t.a.real, t.a.imag]]))
-        if not any([all(np.isclose(v, np.array([t.b.real, t.b.imag]), atol=0.01)) for v in s]):
+        if not any(
+            [all(np.isclose(v, np.array([t.b.real, t.b.imag]), atol=0.01)) for v in s]
+        ):
             s = np.concatenate((s, [[t.b.real, t.b.imag]]))
-        if not any([all(np.isclose(v, np.array([t.c.real, t.c.imag]), atol=0.01)) for v in s]):
+        if not any(
+            [all(np.isclose(v, np.array([t.c.real, t.c.imag]), atol=0.01)) for v in s]
+        ):
             s = np.concatenate((s, [[t.c.real, t.c.imag]]))
     return s
 
 
-if __name__ == '__main__':
+def filterByRadius(points, cutoff):
+    return points[np.linalg.norm(points, axis=1) < cutoff]
+
+
+if __name__ == "__main__":
     import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots()
     grid1 = makeSunGrid(5, 4)
     # grid2 = makeSunGrid(5, 3)

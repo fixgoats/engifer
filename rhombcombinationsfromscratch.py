@@ -14,7 +14,7 @@ from numpy.fft import fft, fftshift, ifft
 from numpy.linalg import norm
 from scipy.signal import convolve2d
 
-from src.penrose import goldenRatio, makeSunGrid
+from src.penrose import filterByRadius, goldenRatio, makeSunGrid
 from src.solvers import SsfmGPGPU, hbar, npnormSqr, smoothnoise
 
 plt.rcParams["animation.ffmpeg_path"] = "/usr/local/bin/ffmpeg"
@@ -137,6 +137,10 @@ thinthickthin = np.array(
 thinthickthin -= np.mean(thinthickthin, axis=0)
 
 penrose = makeSunGrid(rhomblength0 * goldenRatio**4, 4)
+
+if "cutoff" in pars:
+    penrose = filterByRadius(penrose, pars["cutoff"])
+
 if args.check_penrose:
     psample = penrose[0]
     minsep = 100
