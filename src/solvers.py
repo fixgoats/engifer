@@ -284,7 +284,7 @@ class SsfmGPGPU:
         halfRTimeEvo = torch.exp(
             -0.5 * self.dt * (self.Gamma + self.R * self.psiNormSqr())
         )
-        self.nR = halfRTimeEvo * self.nR + self.pump * self.dt / 2
+        self.nR = halfRTimeEvo * self.nR + self.pump * self.dt * 0.5
 
     def psiNormSqr(self):
         return self.psi.conj() * self.psi

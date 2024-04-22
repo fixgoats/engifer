@@ -167,7 +167,8 @@ bleh = np.ndarray((nframes, ndistances))
 
 if args.use_cached is False:
     with profile(
-        activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], record_shapes=True
+        activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU],
+        record_shapes=True,
     ) as prof:
         with record_function("is_this_gonna_work"):
             cuda = torch.device("cuda")
@@ -282,7 +283,7 @@ if args.use_cached is False:
                     extent=[-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2],
                     aspect="equal",
                 )
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    print(prof.key_averages().table(sort_by="self_cuda_time_total"))
 else:
     for i in rs:
         rhomblength = i
