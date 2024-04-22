@@ -13,6 +13,7 @@ from matplotlib import animation
 from numpy.fft import fft, fftshift, ifft
 from numpy.linalg import norm
 from scipy.signal import convolve2d
+from torch.profiler import ProfilerActivity, profile, record_function
 
 from src.penrose import filterByRadius, goldenRatio, makeSunGrid
 from src.solvers import SsfmGPGPU, hbar, npnormSqr, smoothnoise
@@ -163,115 +164,125 @@ setupdict = {
 }
 
 bleh = np.ndarray((nframes, ndistances))
+
 if args.use_cached is False:
-    cuda = torch.device("cuda")
-    x = np.arange(startX, endX, dx).astype(np.complex64)
-    gridY, gridX = np.meshgrid(x, x, indexing="ij")
-    kxmax = np.pi / dx
-    kymax = np.pi / dy
-    dampingscale = endX * endX / 1.6
-    damping = np.cosh((gridX * gridX + gridY * gridY) / dampingscale) - 1
-    imshowBoilerplate(
-        damping.real, "dampingpotential", "x", "y", [startX, endX, startY, endY]
-    )
-    dkx = 2 * kxmax / samplesX
+    with profile(
+        activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], record_shapes=True
+    ) as prof:
+        with record_function("is_this_gonna_work"):
+            cuda = torch.device("cuda")
+            x = np.arange(startX, endX, dx).astype(np.complex64)
+            gridY, gridX = np.meshgrid(x, x, indexing="ij")
+            kxmax = np.pi / dx
+            kymax = np.pi / dy
+            dampingscale = endX * endX / 1.6
+            damping = np.cosh((gridX * gridX + gridY * gridY) / dampingscale) - 1
+            imshowBoilerplate(
+                damping.real, "dampingpotential", "x", "y", [startX, endX, startY, endY]
+            )
+            dkx = 2 * kxmax / samplesX
 
-    xv = torch.from_numpy(gridX)
-    yv = torch.from_numpy(gridY)
-    constV = -0.5j * (
-        pars["gammalp"] * torch.ones((samplesY, samplesX)) + torch.from_numpy(damping)
-    )
+            xv = torch.from_numpy(gridX)
+            yv = torch.from_numpy(gridY)
+            constV = -0.5j * (
+                pars["gammalp"] * torch.ones((samplesY, samplesX))
+                + torch.from_numpy(damping)
+            )
 
-    npolarsgpu = torch.zeros((nframes), device="cuda")
-    for j, r in enumerate(rs):
-        psi = torch.from_numpy(smoothnoise(gridX, gridY))
-        nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-        pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-        points = setupdict[kind]
-        if kind == "penrose":
-            for p in points * r / rhomblength0:
-                pump += pars["pumpStrength"] * gauss(
-                    xv - p[0], yv - p[1], pars["sigma"], pars["sigma"]
+            npolarsgpu = torch.zeros((nframes), device="cuda")
+            for j, r in enumerate(rs):
+                psi = torch.from_numpy(smoothnoise(gridX, gridY))
+                nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
+                pump = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
+                points = setupdict[kind]
+                if kind == "penrose":
+                    for p in points * r / rhomblength0:
+                        pump += pars["pumpStrength"] * gauss(
+                            xv - p[0], yv - p[1], pars["sigma"], pars["sigma"]
+                        )
+                else:
+                    for p in r * points:
+                        pump += pars["pumpStrength"] * gauss(
+                            xv - p[0], yv - p[1], pars["sigma"], pars["sigma"]
+                        )
+                gpsim = SsfmGPGPU(
+                    dev=cuda,
+                    gridX=xv,
+                    gridY=yv,
+                    psi0=psi,
+                    m=pars["m"],
+                    nR0=nR,
+                    alpha=pars["alpha"],
+                    Gamma=pars["Gamma"],
+                    gammalp=pars["gammalp"],
+                    R=pars["R"],
+                    pump=pump,
+                    G=pars["G"],
+                    eta=pars["eta"],
+                    constV=constV,
+                    dt=dt,
                 )
-        else:
-            for p in r * points:
-                pump += pars["pumpStrength"] * gauss(
-                    xv - p[0], yv - p[1], pars["sigma"], pars["sigma"]
+                extentr = np.array([startX, endX, startY, endY])
+                extentk = np.array([-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2])
+                spectrumgpu = torch.zeros((nframes), dtype=torch.cfloat, device="cuda")
+
+                for _ in range(prerun):
+                    gpsim.step()
+
+                for i in range(nframes):
+                    gpsim.step()
+                    npolarsgpu[i] = torch.sum(gpsim.psiNormSqr())
+                    spectrumgpu[i] = torch.sum(gpsim.psi)
+
+                spectrum = (
+                    torch.fft.fftshift(torch.fft.ifft(spectrumgpu))
+                    .detach()
+                    .cpu()
+                    .numpy()
                 )
-        gpsim = SsfmGPGPU(
-            dev=cuda,
-            gridX=xv,
-            gridY=yv,
-            psi0=psi,
-            m=pars["m"],
-            nR0=nR,
-            alpha=pars["alpha"],
-            Gamma=pars["Gamma"],
-            gammalp=pars["gammalp"],
-            R=pars["R"],
-            pump=pump,
-            G=pars["G"],
-            eta=pars["eta"],
-            constV=constV,
-            dt=dt,
-        )
-        extentr = np.array([startX, endX, startY, endY])
-        extentk = np.array([-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2])
-        spectrumgpu = torch.zeros((nframes), dtype=torch.cfloat, device="cuda")
-
-        for _ in range(prerun):
-            gpsim.step()
-
-        for i in range(nframes):
-            gpsim.step()
-            npolarsgpu[i] = torch.sum(gpsim.psiNormSqr())
-            spectrumgpu[i] = torch.sum(gpsim.psi)
-
-        spectrum = (
-            torch.fft.fftshift(torch.fft.ifft(spectrumgpu)).detach().cpu().numpy()
-        )
-        npolars = npolarsgpu.detach().cpu().numpy()
-        np.save(f"tmp/spectrum{r:.3f}.npy", spectrum)
-        bleh[:, j] = npnormSqr(spectrum) / np.max(npnormSqr(spectrum))
-        fig, ax = figBoilerplate()
-        ax.plot(dt * np.arange(nframes), npolars * dx * dy)
-        name = f"{kind}nr{r:.3f}{siminfo}"
-        plt.savefig(os.path.join(basedir, f"{name}.pdf"))
-        plt.close()
-        print(f"Made plot {name}")
-        rdata = gpsim.psi.cpu().detach().numpy()
-        imshowBoilerplate(
-            npnormSqr(rdata),
-            filename=f"{kind}rr{r:.3f}",
-            xlabel="x (µm)",
-            ylabel=r"y (µm)",
-            title=r"$|\psi_r|^2$",
-            extent=[startX, endX, startY, endY],
-            aspect="equal",
-        )
-        kdata = gpsim.psik.cpu().detach().numpy()
-        kdata = fftshift(kdata)[
-            samplesY // 4 - 1 : samplesY - samplesY // 4,
-            samplesX // 4 - 1 : samplesX - samplesX // 4,
-        ]
-        imshowBoilerplate(
-            npnormSqr(kdata),
-            filename=f"{kind}kr{r:.3f}",
-            xlabel="$k_x$ (µ$m^{-1}$)",
-            ylabel=r"$k_y$ (µ$m^{-1}$)",
-            title=r"$|\psi_k|^2$",
-            extent=[-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2],
-            aspect="equal",
-        )
-        imshowBoilerplate(
-            np.log(npnormSqr(kdata) + np.exp(-20)),
-            filename=f"{kind}klogr{r:.3f}",
-            xlabel="$k_x$ (µ$m^{-1}$)",
-            ylabel=r"$k_y$ (µ$m^{-1}$)",
-            title=r"$\ln(|\psi_k|^2 + e^{-20})$",
-            extent=[-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2],
-            aspect="equal",
-        )
+                npolars = npolarsgpu.detach().cpu().numpy()
+                np.save(f"tmp/spectrum{r:.3f}.npy", spectrum)
+                bleh[:, j] = npnormSqr(spectrum) / np.max(npnormSqr(spectrum))
+                fig, ax = figBoilerplate()
+                ax.plot(dt * np.arange(nframes), npolars * dx * dy)
+                name = f"{kind}nr{r:.3f}{siminfo}"
+                plt.savefig(os.path.join(basedir, f"{name}.pdf"))
+                plt.close()
+                print(f"Made plot {name}")
+                rdata = gpsim.psi.cpu().detach().numpy()
+                imshowBoilerplate(
+                    npnormSqr(rdata),
+                    filename=f"{kind}rr{r:.3f}",
+                    xlabel="x (µm)",
+                    ylabel=r"y (µm)",
+                    title=r"$|\psi_r|^2$",
+                    extent=[startX, endX, startY, endY],
+                    aspect="equal",
+                )
+                kdata = gpsim.psik.cpu().detach().numpy()
+                kdata = fftshift(kdata)[
+                    samplesY // 4 - 1 : samplesY - samplesY // 4,
+                    samplesX // 4 - 1 : samplesX - samplesX // 4,
+                ]
+                imshowBoilerplate(
+                    npnormSqr(kdata),
+                    filename=f"{kind}kr{r:.3f}",
+                    xlabel="$k_x$ (µ$m^{-1}$)",
+                    ylabel=r"$k_y$ (µ$m^{-1}$)",
+                    title=r"$|\psi_k|^2$",
+                    extent=[-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2],
+                    aspect="equal",
+                )
+                imshowBoilerplate(
+                    np.log(npnormSqr(kdata) + np.exp(-20)),
+                    filename=f"{kind}klogr{r:.3f}",
+                    xlabel="$k_x$ (µ$m^{-1}$)",
+                    ylabel=r"$k_y$ (µ$m^{-1}$)",
+                    title=r"$\ln(|\psi_k|^2 + e^{-20})$",
+                    extent=[-kxmax / 2, kxmax / 2, -kymax / 2, kymax / 2],
+                    aspect="equal",
+                )
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 else:
     for i in rs:
         rhomblength = i

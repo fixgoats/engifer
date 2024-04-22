@@ -201,12 +201,14 @@ class SsfmGPGPU:
         "R",
         "pump",
         "Gamma",
+        "Gammainv",
         "m",
         "kTimeEvo",
         "alpha",
         "G",
         "eta",
         "constV",
+        "constpart",
     )
 
     def __init__(
@@ -251,6 +253,7 @@ class SsfmGPGPU:
         self.R = R
         self.pump = pump.type(dtype=torch.cfloat).to(device=dev)
         self.Gamma = Gamma
+        self.Gammainv = 1.0 / Gamma
         self.m = m
         squareK = kxv * kxv + kyv * kyv
         self.kTimeEvo = torch.exp(-0.5j * hbar * squareK * dt / m).to(device=dev)
@@ -258,13 +261,19 @@ class SsfmGPGPU:
         self.eta = eta
         self.G = G
         self.constV = constV.to(device=dev)
+        self.constpart = self.constV + G * eta * self.Gammainv * self.pump
+
+    def updatePump(self, pump, dev):
+        self.pump = pump
+        self.constpart = (self.constV + self.G * self.eta * self.Gammainv * pump).to(
+            device=dev
+        )
 
     def V(self):
         return (
-            self.constV
+            self.constpart
             + self.alpha * self.psiNormSqr()
-            + self.G * (self.nR + self.eta * self.pump / self.Gamma)
-            + 0.5j * self.R * self.nR
+            + (self.G + 0.5j * self.R) * self.nR
         )
 
     def halfRStepPsi(self):
