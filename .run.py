@@ -79,50 +79,46 @@ def runSim(psi, nR, kTimeEvo, constPart, pump, npolars, spectrum):
         psi, nR = step(psi, nR, kTimeEvo, constPart, pump)
     for i in range(1024):
         psi, nR = step(psi, nR, kTimeEvo, constPart, pump)
-        npolars[i] = torch.sum(tnormSqr(psi))
+        npolars[i] = torch.sum(tnormSqr(psi).real)
         spectrum[i] = torch.sum(psi)
     return psi, nR
 
 
-dx = (100 - -100) / 1024
-x = np.arange(-100, 100, dx)
-xv, yv = np.meshgrid(x, x)
-
-xv = torch.from_numpy(xv).type(dtype=torch.cfloat).to(device='cuda')
-yv = torch.from_numpy(yv).type(dtype=torch.cfloat).to(device='cuda')
 nR = torch.zeros((1024, 1024), device='cuda', dtype=torch.cfloat)
-kmax = np.pi / dx
-dk = 2 * kmax / 1024
-k = torch.arange(-kmax, kmax, dk, device='cuda').type(dtype=torch.cfloat)
+k = torch.arange(-12.373041835676723, 12.373041835676723, 0.0241660973353061, device='cuda').type(dtype=torch.cfloat)
 k = tfft.fftshift(k)
 kxv, kyv = torch.meshgrid(k, k, indexing='xy')
 kTimeEvo = torch.exp(-0.5j * 0.102845618265625 * (kxv * kxv + kyv * kyv))
-radii = torch.arange(101.66563145999496, 50.83281572999748, -1.4120226591665965)
-print(radii)
-bleh = torch.zeros((1024, 1024), dtype=torch.cfloat, device='cuda')
+radii = torch.arange(101.66563145999496, 50.83281572999748, -25.41640786499874)
+bleh = torch.zeros((1024, 2), dtype=torch.float, device='cuda')
 for j, r in enumerate(radii):
+    x = np.arange(-130, 130, 0.25390625)
+    xv, yv = np.meshgrid(x, x)
     psi = torch.from_numpy(smoothnoise(xv, yv)).type(dtype=torch.cfloat).to(device='cuda')
+    xv = torch.from_numpy(xv).type(dtype=torch.cfloat).to(device='cuda')
+    yv = torch.from_numpy(yv).type(dtype=torch.cfloat).to(device='cuda')
     nR = torch.zeros((1024, 1024), device='cuda', dtype=torch.cfloat)
     pump = torch.zeros((1024, 1024), device='cuda', dtype=torch.cfloat)
     points = makeSunGrid(r, 4)
     for p in points:
-        pump += 24 * tgauss(xv - p[0], yv - p[1])
+        pump += 24 * tgauss(xv - p[0], yv - p[1], s=1.2)
     
     constpart = -0.1j + 0.0 * pump
     spectrumgpu = torch.zeros((1024), dtype=torch.cfloat, device="cuda")
-    npolarsgpu = torch.zeros((1024), dtype=torch.cfloat, device="cuda")
+    npolarsgpu = torch.zeros((1024), dtype=torch.float, device="cuda")
     psi, nR = runSim(psi, nR, kTimeEvo, constpart, pump, npolarsgpu, spectrumgpu)
-    bleh[:, j] = tnormSqr(spectrumgpu) / torch.max(tnormSqr(spectrumgpu).real)
+    spectrumgpu = tfft.fftshift(tfft.ifft(spectrumgpu))
+    bleh[:, j] = tnormSqr(spectrumgpu).real / torch.max(tnormSqr(spectrumgpu).real)
     npolars = npolarsgpu.detach().cpu().numpy()
     fig, ax = figBoilerplate()
-    ax.plot(0.05 * np.arange(1024), npolars * dx * dx)
+    ax.plot(0.05 * np.arange(1024), npolars * 0.0644683837890625)
     name = f"npolarsr{r}"
     plt.savefig(os.path.join(basedir, f"{name}.pdf"))
     plt.close()
-    kpsidata = tnormSqr(tfft.fftshift(tfft.fft2(psi))).detach().cpu().numpy()
-    rpsidata = tnormSqr(psi).detach().cpu().numpy()
-    extentr = np.array([-100, 100, -100, 100])
-    extentk = np.array([-kmax / 2, kmax / 2, -kmax / 2, kmax / 2])
+    kpsidata = tnormSqr(tfft.fftshift(tfft.fft2(psi))).real.detach().cpu().numpy()
+    rpsidata = tnormSqr(psi).real.detach().cpu().numpy()
+    extentr = np.array([-130, 130, -130, 130])
+    extentk = np.array([-6.1865209178383616, 6.1865209178383616, -6.1865209178383616, 6.1865209178383616])
     imshowBoilerplate(
         rpsidata,
         filename=os.path.join(basedir, f"rr{r}.pdf"),
@@ -142,13 +138,15 @@ for j, r in enumerate(radii):
         xlabel="$k_x$ (µ$m^-1$)",
         ylabel=r"$k_y$ (µ$m^-1$)",
         title=r"$\ln(|\psi_k|^2 + e^-20)$",
-        extent=[-kmax / 2, kmax / 2, -kmax / 2, kmax / 2],
+        extent=[-6.1865209178383616, 6.1865209178383616, -6.1865209178383616, 6.1865209178383616],
         aspect="equal",
     )
 
+bleh = bleh.detach().cpu().numpy()
+np.save("wasistlos", bleh)
 ommax = 13.164239138 * np.pi
 imshowBoilerplate(
-    bleh[512 : 563, ::-1],
+    bleh,
     filename=os.path.join(basedir, f"intensity101.66563145999496.pdf"),
     xlabel="d (rhombii side length) (µm)",
     ylabel=r"E (meV)",
@@ -157,7 +155,7 @@ imshowBoilerplate(
 )
 
 imshowBoilerplate(
-    np.log(bleh[512 : 563, ::-1]),
+    np.log(bleh + np.exp(-20)),
     filename=os.path.join(basedir, f"intensitylog101.66563145999496.pdf"),
     xlabel="d (rhombii side length) (µm)",
     ylabel=r"E (meV)",
