@@ -1,4 +1,5 @@
 # Classes to time evolve initial condition according to the Schrödinger equation
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.sparse as sps
 import torch
@@ -9,6 +10,30 @@ from scipy.linalg import expm
 from scipy.signal import convolve2d
 
 hbar = 6.582119569e-1  # meV * ps
+
+
+def figBoilerplate():
+    plt.cla()
+    fig, ax = plt.subplots()
+    fig.dpi = 300
+    fig.figsize = (6.4, 4.8)
+    return fig, ax
+
+
+def imshowBoilerplate(
+    data, filename, xlabel="", ylabel="", extent=[], title="", aspect="auto"
+):
+    fig, ax = figBoilerplate()
+    im = ax.imshow(
+        data, aspect=aspect, origin="lower", interpolation="none", extent=extent
+    )
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    plt.savefig(f"{filename}.pdf")
+    plt.close()
+    print(f"Made testplot")
 
 
 # Using numba for this is actually faster than the default, but vectorizing
@@ -42,6 +67,10 @@ def smoothnoise(xv, yv):
 
 def gauss(x, y, a=1, scale=1):
     return scale * np.exp(-(x * x + y * y) / a)
+
+
+def tgauss(x, y, s=1):
+    return torch.exp(-((x / s) ** 2) - (y / s) ** 2)
 
 
 def findLocalMaxima(vector, fuzz):
