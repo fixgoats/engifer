@@ -11,30 +11,31 @@ pumpStrength = 24
 sigma = 2
 dt = 0.05
 Gamma = 0.1
-Gammainv = 1.0 / Gamma
-eta = 0
+eta = 1
 dt = 0.05
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
 N = 1024
-startX = -130
-endX = 130
+startX = -180
+endX = 180
 dx = (endX - startX) / N
-prerun = 4096
+prerun = 12000
 nframes = 1024
 rhomblength0 = 24
 rhomblength1 = 12
-rad0 = rhomblength0 * goldenRatio**3
-rad1 = rhomblength1 * goldenRatio**3
-ndistances = 2
+rad0 = rhomblength0 * goldenRatio**4
+rad1 = rhomblength1 * goldenRatio**4
+ndistances = 36
 dr = (rad0 - rad1) / ndistances
 kmax = np.pi / dx
 dk = 2 * kmax / N
 
 a = f"""
 import math
+import json
 import os
 import shutil
+import time
 from pathlib import Path
 from time import gmtime, strftime
 
@@ -47,12 +48,31 @@ import torch.fft as tfft
 from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
 from src.penrose import makeSunGrid
 
-
 now = gmtime()
 day = strftime("%Y-%m-%d", now)
 timeofday = strftime("%H.%M", now)
 basedir = os.path.join("graphs", day, timeofday)
 Path(basedir).mkdir(parents=True, exist_ok=True)
+params = {{
+    "gammalp": {gammalp},
+    "alpha": {alpha},
+    "G": {G},
+    "R": {R},
+    "Gamma": {Gamma},
+    "eta": {eta},
+    "m": {m},
+    "N": {N},
+    "startX": {startX},
+    "endX": {endX},
+    "prerun": {prerun},
+    "nframes": {nframes},
+    "rhomblength0": {rhomblength0},
+    "rhomblength1": {rhomblength1},
+    "ndistances": {ndistances}
+}}
+with open(os.path.join(basedir, "parameters.json"), "w") as f:
+    json.dump(params, f)
+
 
 @torch.jit.script
 def tnormSqr(x):
@@ -127,6 +147,12 @@ bleh = torch.zeros(({N}, {ndistances}), dtype=torch.float, device='cuda')
 for j, r in enumerate(radii):
     x = np.arange({startX}, {endX}, {dx})
     xv, yv = np.meshgrid(x, x)
+    dampingscale = {endX * endX * 3}
+    damping = np.cosh((xv*xv + yv*yv) / dampingscale) - 1
+    imshowBoilerplate(
+            damping.real, "dampingpotential", "x", "y", [{startX}, {endX}, {startX}, {endX}]
+            )
+    damping = torch.from_numpy(damping).type(dtype=torch.cfloat).to(device='cuda')
     psi = torch.from_numpy(smoothnoise(xv, yv)).type(dtype=torch.cfloat).to(device='cuda')
     xv = torch.from_numpy(xv).type(dtype=torch.cfloat).to(device='cuda')
     yv = torch.from_numpy(yv).type(dtype=torch.cfloat).to(device='cuda')
@@ -136,7 +162,7 @@ for j, r in enumerate(radii):
     for p in points:
         pump += {pumpStrength} * tgauss(xv - p[0], yv - p[1], s=1.2)
     
-    constpart = {constV} + {G * eta / Gamma} * pump
+    constpart = {constV} - 0.5j * damping + {G * eta / Gamma} * pump
     spectrumgpu = torch.zeros(({nframes}), dtype=torch.cfloat, device="cuda")
     npolarsgpu = torch.zeros(({nframes}), dtype=torch.float, device="cuda")
     psi, nR = runSim(psi, nR, kTimeEvo, constpart, pump, npolarsgpu, spectrumgpu)
@@ -154,12 +180,12 @@ for j, r in enumerate(radii):
     extentk = np.array([{-kmax / 2}, {kmax / 2}, {-kmax / 2}, {kmax / 2}])
     imshowBoilerplate(
         rpsidata,
-        filename=os.path.join(basedir, f"rr{{r}}.pdf"),
-        xlabel='x',
-        ylabel='y',
-        title='ehh',
+        filename=os.path.join(basedir, f"rr{{r}}"),
+        xlabel="x",
+        ylabel="y",
+        title="ehh",
         extent=extentr,
-        aspect='equal',
+        aspect="equal",
     )
     kpsidata = kpsidata[
         {N // 4 - 1} : {N - N // 4},
@@ -167,7 +193,7 @@ for j, r in enumerate(radii):
     ]
     imshowBoilerplate(
         np.log(kpsidata + np.exp(-20)),
-        filename=os.path.join(basedir, f"klogr{{r}}.pdf"),
+        filename=os.path.join(basedir, f"klogr{{r}}"),
         xlabel="$k_x$ (µ$m^{-1}$)",
         ylabel=r"$k_y$ (µ$m^{-1}$)",
         title=r"$\\ln(|\\psi_k|^2 + e^{-20})$",
@@ -179,8 +205,8 @@ bleh = bleh.detach().cpu().numpy()
 np.save("wasistlos", bleh)
 ommax = {hbar / dt} * np.pi
 imshowBoilerplate(
-    bleh,
-    filename=os.path.join(basedir, f"intensity{rad0}.pdf"),
+    bleh[{int(nframes * 0.5)} : {int(0.55 * nframes)}, ::-1],
+    filename=os.path.join(basedir, f"intensity{rad0}"),
     xlabel="d (rhombii side length) (µm)",
     ylabel=r"E (meV)",
     title=r"$I(E, d)$",
@@ -188,8 +214,8 @@ imshowBoilerplate(
 )
 
 imshowBoilerplate(
-    np.log(bleh + np.exp(-20)),
-    filename=os.path.join(basedir, f"intensitylog{rad0}.pdf"),
+    np.log(bleh[{int(nframes * 0.5)} : {int(0.55 * nframes)}, ::-1] + np.exp(-20)),
+    filename=os.path.join(basedir, f"intensitylog{rad0}"),
     xlabel="d (rhombii side length) (µm)",
     ylabel=r"E (meV)",
     title=r"$\\ln(I(E, d))$",
@@ -198,6 +224,7 @@ imshowBoilerplate(
 
 chime.theme("sonic")
 chime.success()
+t2 = time.time()
 """
 
 with open(".run.py", "w") as f:

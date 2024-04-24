@@ -33,7 +33,7 @@ def imshowBoilerplate(
     ax.set_ylabel(ylabel)
     plt.savefig(f"{filename}.pdf")
     plt.close()
-    print(f"Made testplot")
+    print(f"Made plot {filename}")
 
 
 # Using numba for this is actually faster than the default, but vectorizing

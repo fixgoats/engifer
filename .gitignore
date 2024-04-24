@@ -11,3 +11,4 @@ graphs/
 *.zip
 tmp/
 research/
+.run.py
