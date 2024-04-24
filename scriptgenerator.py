@@ -148,7 +148,7 @@ for j, r in enumerate(radii):
     x = np.arange({startX}, {endX}, {dx})
     xv, yv = np.meshgrid(x, x)
     dampingscale = {endX * endX * 3}
-    damping = np.cosh((xv*xv + yv*yv) / dampingscale) - 1
+    damping = 0*np.cosh((xv*xv + yv*yv) / dampingscale) - 1
     imshowBoilerplate(
             damping.real, "dampingpotential", "x", "y", [{startX}, {endX}, {startX}, {endX}]
             )
