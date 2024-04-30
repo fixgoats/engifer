@@ -1,198 +1,147 @@
+import argparse
+import os
+import tomllib
+from datetime import date
+from pathlib import Path
+
+import chime
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from src.solvers import SsfmGPGPU, npnormSqr, tnormSqr, hbar
-from src.penrose import makeSunGrid, goldenRatio
-from numpy.fft import fft, ifft, fftshift
-import matplotlib.pyplot as plt
-from matplotlib import animation
-import tomllib
-import argparse
-from pathlib import Path
-from datetime import date
+from torch.fft import fft, fftshift, ifft
 
-plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
+from src.penrose import goldenRatio, makeSunGrid
+from src.solvers import SsfmGPGPU, gauss, hbar, imshowBoilerplate, npnormSqr, tnormSqr
 
 datestamp = date.today()
 parser = argparse.ArgumentParser()
-parser.add_argument('config')
-parser.add_argument('--use-cached', action='store_true')
+parser.add_argument("config")
+parser.add_argument("--use-cached", action="store_true")
 args = parser.parse_args()
 if args.config is None and args.use_cached is None:
-    exit('Need to specify config')
+    exit("Need to specify config")
 
-with open(f'{args.config}', 'rb') as f:
+with open(f"{args.config}", "rb") as f:
     pars = tomllib.load(f)
 
 
-def gauss(x, y, sigmax, sigmay):
-    return torch.exp(-x * x / sigmax - y * y / sigmay)
+dev = torch.device("cuda")  # Change this to cpu if you don't have an nvidia gpu
+endX = pars["endX"]
+startX = pars["startX"]
+samplesX = pars["samplesX"]
+endY = pars["endY"]
+startY = pars["startY"]
+samplesY = pars["samplesY"]
+dx = (endX - startX) / samplesX
+dy = (endY - startY) / samplesY
+x = torch.arange(startX, endX, dx)
+y = torch.arange(startY, endY, dy)
+x = x.type(dtype=torch.cfloat)
+y = y.type(dtype=torch.cfloat)
+gridX, gridY = torch.meshgrid(x, y, indexing="xy")
+kxmax = np.pi / dx
+kymax = np.pi / dy
+dkx = 2 * kxmax / samplesX
+psi = 0.1 * torch.rand((samplesY, samplesX), dtype=torch.cfloat)
 
+constV = -0.5j * pars["gammalp"] * torch.ones((samplesY, samplesX))
 
-if args.use_cached is False:
-    cuda = torch.device('cuda')
-    endX = pars["endX"]
-    startX = pars["startX"]
-    samplesX = pars["samplesX"]
-    endY = pars["endY"]
-    startY = pars["startY"]
-    samplesY = pars["samplesY"]
-    dx = (endX - startX) / samplesX
-    dy = (endY - startY) / samplesY
-    x = torch.arange(startX, endX, dx)
-    y = torch.arange(startY, endY, dy)
-    x = x.type(dtype=torch.cfloat)
-    y = y.type(dtype=torch.cfloat)
-    gridX, gridY = torch.meshgrid(y, x, indexing='ij')
-    kxmax = np.pi / dx
-    kymax = np.pi / dy
-    dkx = 2 * kxmax / samplesX
-    psi = 0.1*torch.rand((samplesY, samplesX), dtype=torch.cfloat)
+pump = pars["pumpStrength"] * (gauss(gridX, gridY, pars["sigma"], pars["sigma"]))
+nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
+gpsim = SsfmGPGPU(
+    dev=dev,
+    psi0=psi,
+    gridX=gridX,
+    gridY=gridY,
+    m=pars["m"],
+    nR0=nR,
+    alpha=pars["alpha"],
+    Gamma=pars["Gamma"],
+    gammalp=pars["gammalp"],
+    R=pars["R"],
+    pump=pump,
+    G=pars["G"],
+    eta=pars["eta"],
+    constV=constV,
+    dt=pars["dt"],
+)  # the constructor takes care of sending all arrays to the appropriate device
 
-    # constV = ((gridX / 50)**2 + (gridY / 50)**2)**8 - 0.5j*pars["gammalp"]
-    constV = -0.5j*pars["gammalp"]*torch.ones((samplesY, samplesX))
+nframes = 1024
+dispersion = torch.zeros(
+    (nframes, samplesX), dtype=torch.cfloat, device=dev
+)  # The naming nframes is because I'm essentially recording a certain number of snapshots
 
-    pump = pars["pumpStrength"] * (gauss(gridX, gridY, pars["sigma"], pars["sigma"]))
-    nR = torch.zeros((samplesY, samplesX), dtype=torch.cfloat)
-    gpsim = SsfmGPGPU(dev=cuda,
-                      psi0=psi,
-                      gridX=gridX,
-                      gridY=gridY,
-                      m=pars["m"],
-                      nR0=nR,
-                      alpha=pars["alpha"],
-                      Gamma=pars["Gamma"],
-                      gammalp=pars["gammalp"],
-                      R=pars["R"],
-                      pump=pump,
-                      G=pars["G"],
-                      eta=pars["eta"],
-                      constV=constV,
-                      dt=pars["dt"])
+for _ in range(
+    pars["prerun"]
+):  # The prerun is for getting the system to a stable state before data is recorded
+    gpsim.step()
 
-    nframes = 1024
-    fps = 24
-    fig, [ax1, ax2] = plt.subplots(1, 2)
-    fig.dpi = 300
-    fig.figsize = (6.4, 3.6)
-    extentr = np.array([startX, endX, startY, endY])
-    extentk = np.array([-kxmax/3, kxmax/3, -kymax/3, kymax/3])
-    dispersion = np.zeros((nframes, samplesX), dtype=complex)
+for i in range(pars["nframes"]):
+    gpsim.step()
+    dispersion[i, :] = gpsim.psi[
+        samplesY // 2 - 1, :
+    ]  # Here I'm recording an x-axis of data to then get a dispersion relation
 
-    for _ in range(pars["prerun"]):
-        gpsim.step()
+rdata = tnormSqr(gpsim.psi).real.detach().cpu().numpy()
+kdata = tnormSqr(gpsim.psik).real.detach().cpu().numpy()
+Emax = hbar * np.pi / pars["dt"]
+extentE = [-kxmax, kxmax, 0, Emax / 4]
 
-    for i in range(pars["nframes"]):
-        gpsim.step()
-        rdata = gpsim.psi.detach().cpu().numpy()
-        dispersion[i, :] = rdata[samplesY//2 - 1, :]
-
-    Path("tmp").mkdir(parents=True, exist_ok=True)
-    rdata = gpsim.psi.detach().cpu().numpy()
-    np.save("tmp/rdata.npy", rdata)
-    kdata = gpsim.psik.detach().cpu().numpy()
-    np.save("tmp/kdata.npy", kdata)
-    np.save("tmp/disp.npy", dispersion)
-    np.save("tmp/extentr.npy", extentr)
-    np.save("tmp/extentk.npy", extentk)
-    Emax = hbar * np.pi / pars['dt']
-    extentE = [-kxmax, kxmax, 0, Emax]
-    np.save("tmp/extentE.npy", extentE)
-
-
-else:
-    rdata = np.load("tmp/rdata.npy")
-    kdata = np.load("tmp/kdata.npy")
-    dispersion = np.load("tmp/disp.npy")
-    extentr = np.load("tmp/extentr.npy")
-    extentk = np.load("tmp/extentk.npy")
-    extentE = np.load("tmp/extentE.npy")
-    samplesY, samplesX = np.shape(rdata)
-
-plt.cla()
-fig, ax = plt.subplots()
-rdata = rdata[samplesY//6-1:samplesY-samplesY//6,
-              samplesX//6-1:samplesX-samplesX//6]
-im = ax.imshow(npnormSqr(rdata), origin='lower',
-               extent=2*extentr/3)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+rdata = rdata[
+    samplesY // 6 - 1 : samplesY - samplesY // 6,
+    samplesX // 6 - 1 : samplesX - samplesX // 6,
+]  # cropping the r-space data
+extentr = [2 * startX / 3, 2 * endX / 3, 2 * startY / 3, 2 * endY / 3]
 basedir = f"graphs/{datestamp}"
 Path(basedir).mkdir(parents=True, exist_ok=True)
-name = 'examplerplot'
-ax.set_title('$|\\psi_r|^2$, cropped view.')
-ax.set_xlabel(r'x (µm)')
-ax.set_ylabel(r'y (µm)')
-ax.set_ylim(2*extentr[2]/3, 2*extentr[3]/3)
-ax.set_xlim(2*extentr[0]/3, 2*extentr[1]/3)
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made r-space plot {name} in {basedir}')
-
+imshowBoilerplate(
+    rdata,
+    os.path.join(basedir, "exampler.pdf"),
+    extent=extentr,
+    xlabel="x [µm]",
+    ylabel="y [µm]",
+    aspect="equal",
+    title=r"$|\psi_r|^2$",
+)
 startky = samplesY // 3 - 1
 endky = samplesY - samplesY // 3
 startkx = samplesX // 3 - 1
 endkx = samplesX - samplesX // 3
-kdata = npnormSqr(fftshift(kdata)[startky:endky, startkx:endky])
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(kdata, origin='lower',
-               interpolation=None,
-               extent=extentk)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-ax.plot(np.arange(-kxmax/3, kxmax/3, dkx),
-        1.6*np.ones(len(np.arange(-kxmax/3, kxmax/3, dkx))),
-        color='red')
-name = 'examplekplot'
-ax.set_title(r'$|\psi_k|^2$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made k-space plot {name} in {basedir}')
+kdata = kdata[startky:endky, startkx:endky]
+extentk = [-kxmax / 3, kxmax / 3, -kymax / 3, kymax / 3]
+imshowBoilerplate(
+    kdata,
+    os.path.join(basedir, "examplek.pdf"),
+    extent=extentk,
+    xlabel="$k_x$ [µm]",
+    ylabel="$k_y$ [µm]",
+    aspect="equal",
+    title=r"$|\psi_k|^2$",
+)
 
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(np.log(kdata+np.exp(-10)), origin='lower',
-               interpolation=None,
-               extent=extentk)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = 'examplelogkplot'
-ax.set_title(r'$\ln(|\psi_k|^2 + e^{-10})$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$k_y$ ($\mu m^{-1}$)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made logarithmic k-space plot {name} in {basedir}')
+imshowBoilerplate(
+    np.log(kdata + np.exp(-20)),
+    os.path.join(basedir, "exampleklog.pdf"),
+    extent=extentk,
+    xlabel=r"$k_x$ [µ$m^{-1}$]",
+    ylabel=r"$k_y$ [µ$m^{-1}$]",
+    aspect="equal",
+    title=r"$\ln(|\psi_k|^2 + e^{-20})",
+)
 
 dispersion = fftshift(fft(ifft(dispersion, axis=0), axis=1))
-start = dispersion.shape[0] // 2 - 1
-dispersion = dispersion[start:, :]
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(np.sqrt(npnormSqr(dispersion)),
-               interpolation=None,
-               aspect='auto',
-               origin='lower',
-               extent=extentE)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = 'exampledispersionplot'
-ax.set_title(r'$\rho(E, k_x)$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$E$ (meV)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made dispersion relation plot {name} in {basedir}')
+disp = tnormSqr(dispersion).real.detach().cpu().numpy()
+start = disp.shape[0] // 2 - 1
+end = start + disp.shape[0] // 8
+disp = disp[start:end, :]
+imshowBoilerplate(
+    disp,
+    os.path.join(basedir, "dispersion.pdf"),
+    extent=extentE,
+    xlabel="$k_x$ [µ$m^{-1}$]",
+    ylabel="E [meV]",
+    title=r"$I(k_x, E)$",
+)
 
-plt.cla()
-fig, ax = plt.subplots()
-im = ax.imshow(np.log(np.sqrt(npnormSqr(dispersion) + np.exp(-10))),
-               aspect='auto',
-               origin='lower',
-               extent=extentE)
-plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-name = 'examplelogdispersionplot'
-ax.set_title(r'$\ln(\rho(E, k_x) + e^{-10})$')
-ax.set_xlabel(r'$k_x$ ($\mu m^{-1}$)')
-ax.set_ylabel(r'$E$ (meV)')
-plt.savefig(f'{basedir}/{name}.pdf')
-plt.savefig(f'{basedir}/{name}.png')
-print(f'Made logarithmic dispersion relation plot {name} in {basedir}')
+chime.theme("sonic")
+chime.success()

@@ -82,7 +82,6 @@ if __name__ == "__main__":
     ax.set_aspect("equal")
     ax.scatter(grid1[:, 0], grid1[:, 1], color="r")
     p = grid1[np.all(abs(grid1) < 0.1, axis=1)]
-    print(p)
     # ax.scatter(grid2[:, 0], grid2[:, 1], color='g')
     # ax.scatter(grid1[:, 0], grid1[:, 1], color='b')
     # ax.scatter(grid4[:, 0], grid4[:, 1], color='orange')
