@@ -1,8 +1,8 @@
 import argparse
 import os
 import tomllib
-from datetime import date
 from pathlib import Path
+from time import gmtime, strftime
 
 import chime
 import matplotlib.pyplot as plt
@@ -13,7 +13,11 @@ from torch.fft import fft, fftshift, ifft
 from src.penrose import goldenRatio, makeSunGrid
 from src.solvers import SsfmGPGPU, gauss, hbar, imshowBoilerplate, npnormSqr, tnormSqr
 
-datestamp = date.today()
+now = gmtime()
+day = strftime("%Y-%m-%d", now)
+timeofday = strftime("%H.%M", now)
+basedir = os.path.join("graphs", day, timeofday)
+Path(basedir).mkdir(parents=True, exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument("config")
 parser.add_argument("--use-cached", action="store_true")
@@ -92,8 +96,6 @@ rdata = rdata[
     samplesX // 6 - 1 : samplesX - samplesX // 6,
 ]  # cropping the r-space data
 extentr = [2 * startX / 3, 2 * endX / 3, 2 * startY / 3, 2 * endY / 3]
-basedir = f"graphs/{datestamp}"
-Path(basedir).mkdir(parents=True, exist_ok=True)
 imshowBoilerplate(
     rdata,
     os.path.join(basedir, "exampler.pdf"),
