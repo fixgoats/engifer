@@ -7,7 +7,7 @@ constV = -0.5j * gammalp
 alpha = 0.0004
 G = 0.002
 R = 0.016
-pumpStrength = 25
+pumpStrength = 26
 sigma = 2
 dt = 0.05
 Gamma = 0.1
@@ -15,20 +15,20 @@ eta = 1
 dt = 0.05
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
-N = 1024
-startX = -180
-endX = 180
+N = 64
+startX = -100
+endX = 100
 dx = (endX - startX) / N
 prerun = 12000
 nframes = 1024
 rhomblength0 = 24
-rhomblength1 = 12
-rad0 = rhomblength0 * goldenRatio**4
-rad1 = rhomblength1 * goldenRatio**4
-ndistances = 36
-dr = (rad0 - rad1) / ndistances
+rhomblength1 = 10
+ndistances = 2
+dr = (rhomblength0 - rhomblength1) / ndistances
 kmax = np.pi / dx
 dk = 2 * kmax / N
+sigmax = 1.2
+sigmay = 1.2
 
 a = f"""
 import math
@@ -46,13 +46,11 @@ import torch
 import torch.fft as tfft
 
 from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
-from src.penrose import makeSunGrid
+from src.penrose import filterByRadius, makeSunGrid
 
 now = gmtime()
 day = strftime("%Y-%m-%d", now)
 timeofday = strftime("%H.%M", now)
-basedir = os.path.join("graphs", day, timeofday)
-Path(basedir).mkdir(parents=True, exist_ok=True)
 params = {{
     "gammalp": {gammalp},
     "alpha": {alpha},
@@ -70,8 +68,6 @@ params = {{
     "rhomblength1": {rhomblength1},
     "ndistances": {ndistances}
 }}
-with open(os.path.join(basedir, "parameters.json"), "w") as f:
-    json.dump(params, f)
 
 
 @torch.jit.script
@@ -136,91 +132,126 @@ def runSim(psi, nR, kTimeEvo, constPart, pump, npolars, spectrum):
         spectrum[i] = torch.sum(psi)
     return psi, nR
 
+basis = {rhomblength0} * np.array([[np.cos(i * np.pi / 5), np.sin(i * np.pi / 5)] for i in range(10)])
+
+thin = np.array([[0, 0], basis[2], basis[3], basis[2] + basis[3]])
+
+thin -= np.mean(thin, axis=0)
+
+thick = np.array([[0, 0], basis[1], basis[4], basis[4] + basis[1]])
+
+thick -= np.mean(thick, axis=0)
+
+thinthin = np.array(
+    [[0, 0], basis[2], basis[3], basis[2] + basis[3], basis[2] + basis[1], basis[1]]
+)
+
+
+thinthin -= np.mean(thinthin, axis=0)
+
+thickthin = np.array(
+    [[0, 0], basis[1], basis[4], basis[4] + basis[1], basis[1] + basis[0], basis[0]]
+)
+
+thickthin -= np.mean(thickthin, axis=0)
+
+thickthick = np.array(
+    [[0, 0], basis[2], basis[5], basis[5] + basis[2], basis[0] + basis[2], basis[0]]
+)
+
+thickthick -= np.mean(thickthick, axis=0)
+
+thinthickthin = np.array(
+    [
+        [0, 0],
+        basis[1],
+        basis[4],
+        basis[1] + basis[4],
+        basis[0],
+        basis[1] + basis[0],
+        basis[5],
+        basis[5] + basis[4],
+    ]
+)
+
+thinthickthin -= np.mean(thinthickthin, axis=0)
+
+penrose0 = filterByRadius(makeSunGrid({rhomblength0 * goldenRatio**4}, 4), 160)
+penrose1 = filterByRadius(penrose0, 110)
+penrose2 = filterByRadius(penrose0, 60)
+
+setupdict = {{
+#    "thin": thin,
+#    "thick": thick,
+#    "thinthin": thinthin,
+#    "thickthin": thickthin,
+#    "thickthick": thickthick,
+#    "thinthickthin": thinthickthin,
+#    "penrose0": penrose0,
+#    "penrose1": penrose1,
+    "penrose2": penrose2,
+}}
 
 nR = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
 k = torch.arange({-kmax}, {kmax}, {dk}, device='cuda').type(dtype=torch.cfloat)
 k = tfft.fftshift(k)
 kxv, kyv = torch.meshgrid(k, k, indexing='xy')
 kTimeEvo = torch.exp(-0.5j * {hbar * dt / m} * (kxv * kxv + kyv * kyv))
-radii = torch.arange({rad0}, {rad1}, {-dr})
-bleh = torch.zeros(({N}, {ndistances}), dtype=torch.float, device='cuda')
-for j, r in enumerate(radii):
-    x = np.arange({startX}, {endX}, {dx})
-    xv, yv = np.meshgrid(x, x)
-    dampingscale = {endX * endX * 3}
-    damping = 0*np.cosh((xv*xv + yv*yv) / dampingscale) - 1
-    imshowBoilerplate(
-            damping.real, "dampingpotential", "x", "y", [{startX}, {endX}, {startX}, {endX}]
-            )
-    damping = torch.from_numpy(damping).type(dtype=torch.cfloat).to(device='cuda')
-    psi = torch.from_numpy(smoothnoise(xv, yv)).type(dtype=torch.cfloat).to(device='cuda')
-    xv = torch.from_numpy(xv).type(dtype=torch.cfloat).to(device='cuda')
-    yv = torch.from_numpy(yv).type(dtype=torch.cfloat).to(device='cuda')
-    nR = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
-    pump = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
-    points = makeSunGrid(r, 4)
-    for p in points:
-        pump += {pumpStrength} * tgauss(xv - p[0], yv - p[1], s=1.2)
+rhomblengths = torch.arange({rhomblength0}, {rhomblength1}, {-dr})
+for key in setupdict:
+    bleh = np.zeros(({nframes}, {ndistances}))
+    orgpoints = setupdict[key]
+    basedir = os.path.join("graphs", key, day, timeofday)
+    Path(basedir).mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(basedir, "parameters.json"), "w") as f:
+        json.dump(params, f)
+    for j, r in enumerate(rhomblengths):
+        x = np.arange({startX}, {endX}, {dx})
+        xv, yv = np.meshgrid(x, x)
+        # dampingscale = {endX * endX * 3}
+        # damping = 0*(np.cosh((xv*xv + yv*yv) / dampingscale) - 1)
+        # imshowBoilerplate(
+        #         damping.real, "dampingpotential", "x", "y", [{startX}, {endX}, {startX}, {endX}]
+        #         )
+        # damping = torch.from_numpy(damping).type(dtype=torch.cfloat).to(device='cuda')
+        psi = torch.from_numpy(smoothnoise(xv, yv)).type(dtype=torch.cfloat).to(device='cuda')
+        xv = torch.from_numpy(xv).type(dtype=torch.cfloat).to(device='cuda')
+        yv = torch.from_numpy(yv).type(dtype=torch.cfloat).to(device='cuda')
+        nR = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
+        pump = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
+        points = (r / {rhomblength0}) * orgpoints
+        for p in points:
+            pump += {pumpStrength} * tgauss(xv - p[0],
+                                            yv - p[1],
+                                            sigmax={sigmax},
+                                            sigmay={sigmay})
+
+        constpart = {constV} + {G * eta / Gamma} * pump
+        spectrumgpu = torch.zeros(({nframes}), dtype=torch.cfloat, device="cuda")
+        npolarsgpu = torch.zeros(({nframes}), dtype=torch.float, device="cuda")
+        psi, nR = runSim(psi, nR, kTimeEvo, constpart, pump, npolarsgpu, spectrumgpu)
+        spectrumgpu = tfft.fftshift(tfft.ifft(spectrumgpu))
+        spectrumnp = spectrumgpu.detach().cpu().numpy()
+        bleh[:, j] = npnormSqr(spectrumnp) / np.max(npnormSqr(spectrumnp))
+        npolars = npolarsgpu.detach().cpu().numpy()
+        np.save(os.path.join(basedir, f"npolarsr{{r:.2f}}"), npolars)
+        kpsidata = tnormSqr(tfft.fftshift(tfft.fft2(psi))).real.detach().cpu().numpy()
+        rpsidata = tnormSqr(psi).real.detach().cpu().numpy()
+        extentr = np.array([{startX}, {endX}, {startX}, {endX}])
+        extentk = np.array([{-kmax}, {kmax}, {-kmax}, {kmax}])
+        np.save(os.path.join(basedir, f"psidata{{r:.2f}}"),
+                {{"kpsidata": kpsidata,
+                 "rpsidata": rpsidata,
+                 "extentr": extentr,
+                 "extentk": extentk,
+                 }})
     
-    constpart = {constV} - 0.5j * damping + {G * eta / Gamma} * pump
-    spectrumgpu = torch.zeros(({nframes}), dtype=torch.cfloat, device="cuda")
-    npolarsgpu = torch.zeros(({nframes}), dtype=torch.float, device="cuda")
-    psi, nR = runSim(psi, nR, kTimeEvo, constpart, pump, npolarsgpu, spectrumgpu)
-    spectrumgpu = tfft.fftshift(tfft.ifft(spectrumgpu))
-    bleh[:, j] = tnormSqr(spectrumgpu).real / torch.max(tnormSqr(spectrumgpu).real)
-    npolars = npolarsgpu.detach().cpu().numpy()
-    fig, ax = figBoilerplate()
-    ax.plot({dt} * np.arange({nframes}), npolars * {dx * dx})
-    name = f"npolarsr{{r}}"
-    plt.savefig(os.path.join(basedir, f"{{name}}.pdf"))
-    plt.close()
-    kpsidata = tnormSqr(tfft.fftshift(tfft.fft2(psi))).real.detach().cpu().numpy()
-    rpsidata = tnormSqr(psi).real.detach().cpu().numpy()
-    extentr = np.array([{startX}, {endX}, {startX}, {endX}])
-    extentk = np.array([{-kmax / 2}, {kmax / 2}, {-kmax / 2}, {kmax / 2}])
-    imshowBoilerplate(
-        rpsidata,
-        filename=os.path.join(basedir, f"rr{{r}}"),
-        xlabel="x",
-        ylabel="y",
-        title="ehh",
-        extent=extentr,
-        aspect="equal",
-    )
-    kpsidata = kpsidata[
-        {N // 4 - 1} : {N - N // 4},
-        {N // 4 - 1} : {N - N // 4},
-    ]
-    imshowBoilerplate(
-        np.log(kpsidata + np.exp(-20)),
-        filename=os.path.join(basedir, f"klogr{{r}}"),
-        xlabel="$k_x$ (µ$m^{-1}$)",
-        ylabel=r"$k_y$ (µ$m^{-1}$)",
-        title=r"$\\ln(|\\psi_k|^2 + e^{-20})$",
-        extent=[{-kmax / 2}, {kmax / 2}, {-kmax / 2}, {kmax / 2}],
-        aspect="equal",
-    )
-
-bleh = bleh.detach().cpu().numpy()
-np.save("wasistlos", bleh)
-ommax = {hbar / dt} * np.pi
-imshowBoilerplate(
-    bleh[{int(nframes * 0.5)} : {int(0.55 * nframes)}, ::-1],
-    filename=os.path.join(basedir, f"intensity{rad0}"),
-    xlabel="d (rhombii side length) (µm)",
-    ylabel=r"E (meV)",
-    title=r"$I(E, d)$",
-    extent=[{rhomblength1}, {rhomblength0}, 0, ommax / 10],
-)
-
-imshowBoilerplate(
-    np.log(bleh[{int(nframes * 0.5)} : {int(0.55 * nframes)}, ::-1] + np.exp(-20)),
-    filename=os.path.join(basedir, f"intensitylog{rad0}"),
-    xlabel="d (rhombii side length) (µm)",
-    ylabel=r"E (meV)",
-    title=r"$\\ln(I(E, d))$",
-    extent=[{rhomblength1}, {rhomblength0}, 0, ommax / 10],
-)
+    np.save(os.path.join(basedir, "spectra"), 
+            {{"spectra": bleh,
+             "extent": [{rhomblength1},
+                        {rhomblength0},
+                        -{np.pi * hbar / dt},
+                        {np.pi * hbar / dt}]}})
 
 chime.theme("sonic")
 chime.success()

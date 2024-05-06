@@ -21,7 +21,7 @@ def figBoilerplate():
 
 
 def imshowBoilerplate(
-    data, filename, xlabel="", ylabel="", extent=[], title="", aspect="auto"
+    data, filename, xlabel="", ylabel="", extent=[], title="", aspect="auto", norm=None
 ):
     fig, ax = figBoilerplate()
     im = ax.imshow(

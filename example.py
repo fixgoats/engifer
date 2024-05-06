@@ -8,6 +8,7 @@ import chime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.colors import LogNorm
 from torch.fft import fft, fftshift, ifft
 
 from src.penrose import goldenRatio, makeSunGrid
@@ -87,7 +88,7 @@ for i in range(pars["nframes"]):
     ]  # Here I'm recording an x-axis of data to then get a dispersion relation
 
 rdata = tnormSqr(gpsim.psi).real.detach().cpu().numpy()
-kdata = tnormSqr(gpsim.psik).real.detach().cpu().numpy()
+kdata = fftshift(tnormSqr(gpsim.psik)).real.detach().cpu().numpy()
 Emax = hbar * np.pi / pars["dt"]
 extentE = [-kxmax, kxmax, 0, Emax / 4]
 
@@ -143,7 +144,10 @@ imshowBoilerplate(
     xlabel="$k_x$ [µ$m^{-1}$]",
     ylabel="E [meV]",
     title=r"$I(k_x, E)$",
+    norm=LogNorm(vmin=np.min(disp), vmax=np.max(disp)),
 )
 
 chime.theme("sonic")
-chime.success()
+chime.success()  # This is pretty unnecessary here, but if you have a similar
+# script that takes ~1hr to run it's useful to get some
+# kind of notification when it's done
