@@ -7,14 +7,14 @@ constV = -0.5j * gammalp
 alpha = 0.0004
 G = 0.002
 R = 0.016
-pumpStrength = 14
+pumpStrength = 45
 dt = 0.05
 Gamma = 0.1
 eta = 2
 dt = 0.05
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
-N = 1024
+N = 512
 startX = -150
 endX = 150
 dx = (endX - startX) / N
@@ -26,8 +26,8 @@ ndistances = 16
 dr = (rhomblength1 - rhomblength0) / ndistances
 kmax = np.pi / dx
 dk = 2 * kmax / N
-sigmax = 2
-sigmay = 2
+sigmax = 1.2
+sigmay = 1.2
 
 a = f"""
 import math
@@ -185,15 +185,15 @@ penrose2 = filterByRadius(penrose0, 30)
 point = np.array([[10,0]])
 
 setupdict = {{
-    "thin": thin,
+#    "thin": thin,
     "thick": thick,
-    "thinthin": thinthin,
-    "thickthin": thickthin,
-    "thickthick": thickthick,
-    "thinthickthin": thinthickthin,
-    "penrose0": penrose0,
-    "penrose1": penrose1,
-    "penrose2": penrose2,
+#    "thinthin": thinthin,
+#    "thickthin": thickthin,
+#    "thickthick": thickthick,
+#    "thinthickthin": thinthickthin,
+#    "penrose0": penrose0,
+#    "penrose1": penrose1,
+#    "penrose2": penrose2,
 #    "point": point,
 }}
 
