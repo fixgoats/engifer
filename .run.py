@@ -1,21 +1,20 @@
 
-import math
 import json
+import math
 import os
-import shutil
 import time
 from pathlib import Path
 from time import gmtime, strftime
 
-import chime
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.fft as tfft
+from desktop_notifier import DesktopNotifier
 
-from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
 from src.penrose import filterByRadius, makeSunGrid
+from src.solvers import npnormSqr, smoothnoise, tgauss
 
+t1 = time.time()
 now = gmtime()
 day = strftime("%Y-%m-%d", now)
 timeofday = strftime("%H.%M", now)
@@ -27,12 +26,12 @@ params = {
     "Gamma": 0.1,
     "eta": 1,
     "m": 0.32,
-    "N": 64,
+    "N": 1024,
     "startX": -100,
     "endX": 100,
     "prerun": 12000,
     "nframes": 1024,
-    "rhomblength0": 24,
+    "rhomblength0": 18,
     "rhomblength1": 10,
     "ndistances": 2
 }
@@ -100,7 +99,7 @@ def runSim(psi, nR, kTimeEvo, constPart, pump, npolars, spectrum):
         spectrum[i] = torch.sum(psi)
     return psi, nR
 
-basis = 24 * np.array([[np.cos(i * np.pi / 5), np.sin(i * np.pi / 5)] for i in range(10)])
+basis = 18 * np.array([[np.cos(i * np.pi / 5), np.sin(i * np.pi / 5)] for i in range(10)])
 
 thin = np.array([[0, 0], basis[2], basis[3], basis[2] + basis[3]])
 
@@ -144,28 +143,28 @@ thinthickthin = np.array(
 
 thinthickthin -= np.mean(thinthickthin, axis=0)
 
-penrose0 = filterByRadius(makeSunGrid(164.49844718999245, 4), 160)
+penrose0 = filterByRadius(makeSunGrid(123.37383539249434, 4), 160)
 penrose1 = filterByRadius(penrose0, 110)
 penrose2 = filterByRadius(penrose0, 60)
 
 setupdict = {
 #    "thin": thin,
-#    "thick": thick,
+    "thick": thick,
 #    "thinthin": thinthin,
 #    "thickthin": thickthin,
 #    "thickthick": thickthick,
 #    "thinthickthin": thinthickthin,
 #    "penrose0": penrose0,
 #    "penrose1": penrose1,
-    "penrose2": penrose2,
+#    "penrose2": penrose2,
 }
 
-nR = torch.zeros((64, 64), device='cuda', dtype=torch.cfloat)
-k = torch.arange(-1.0053096491487339, 1.0053096491487339, 0.031415926535897934, device='cuda').type(dtype=torch.cfloat)
+nR = torch.zeros((1024, 1024), device='cuda', dtype=torch.cfloat)
+k = torch.arange(-16.084954386379742, 16.084954386379742, 0.031415926535897934, device='cuda').type(dtype=torch.cfloat)
 k = tfft.fftshift(k)
 kxv, kyv = torch.meshgrid(k, k, indexing='xy')
 kTimeEvo = torch.exp(-0.5j * 0.102845618265625 * (kxv * kxv + kyv * kyv))
-rhomblengths = torch.arange(24, 10, -7.0)
+rhomblengths = torch.arange(18, 10, -4.0)
 for key in setupdict:
     bleh = np.zeros((1024, 2))
     orgpoints = setupdict[key]
@@ -174,7 +173,7 @@ for key in setupdict:
     with open(os.path.join(basedir, "parameters.json"), "w") as f:
         json.dump(params, f)
     for j, r in enumerate(rhomblengths):
-        x = np.arange(-100, 100, 3.125)
+        x = np.arange(-100, 100, 0.1953125)
         xv, yv = np.meshgrid(x, x)
         # dampingscale = 30000
         # damping = 0*(np.cosh((xv*xv + yv*yv) / dampingscale) - 1)
@@ -185,9 +184,9 @@ for key in setupdict:
         psi = torch.from_numpy(smoothnoise(xv, yv)).type(dtype=torch.cfloat).to(device='cuda')
         xv = torch.from_numpy(xv).type(dtype=torch.cfloat).to(device='cuda')
         yv = torch.from_numpy(yv).type(dtype=torch.cfloat).to(device='cuda')
-        nR = torch.zeros((64, 64), device='cuda', dtype=torch.cfloat)
-        pump = torch.zeros((64, 64), device='cuda', dtype=torch.cfloat)
-        points = (r / 24) * orgpoints
+        nR = torch.zeros((1024, 1024), device='cuda', dtype=torch.cfloat)
+        pump = torch.zeros((1024, 1024), device='cuda', dtype=torch.cfloat)
+        points = (r / 18) * orgpoints
         for p in points:
             pump += 26 * tgauss(xv - p[0],
                                             yv - p[1],
@@ -206,7 +205,7 @@ for key in setupdict:
         kpsidata = tnormSqr(tfft.fftshift(tfft.fft2(psi))).real.detach().cpu().numpy()
         rpsidata = tnormSqr(psi).real.detach().cpu().numpy()
         extentr = np.array([-100, 100, -100, 100])
-        extentk = np.array([-1.0053096491487339, 1.0053096491487339, -1.0053096491487339, 1.0053096491487339])
+        extentk = np.array([-16.084954386379742, 16.084954386379742, -16.084954386379742, 16.084954386379742])
         np.save(os.path.join(basedir, f"psidata{r:.2f}"),
                 {"kpsidata": kpsidata,
                  "rpsidata": rpsidata,
@@ -217,10 +216,10 @@ for key in setupdict:
     np.save(os.path.join(basedir, "spectra"), 
             {"spectra": bleh,
              "extent": [10,
-                        24,
+                        18,
                         -41.35667696604003,
                         41.35667696604003]})
 
-chime.theme("sonic")
-chime.success()
 t2 = time.time()
+notifier = DesktopNotifier()
+n = notifier.send_sync(title="Done!", message=f"Simulation ran in {t2 - t1:.2f} seconds")

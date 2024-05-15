@@ -8,20 +8,20 @@ alpha = 0.0004
 G = 0.002
 R = 0.016
 pumpStrength = 26
-sigma = 2
+sigma = 1.3
 dt = 0.05
 Gamma = 0.1
 eta = 1
 dt = 0.05
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
-N = 64
+N = 1024
 startX = -100
 endX = 100
 dx = (endX - startX) / N
 prerun = 12000
 nframes = 1024
-rhomblength0 = 24
+rhomblength0 = 18
 rhomblength1 = 10
 ndistances = 2
 dr = (rhomblength0 - rhomblength1) / ndistances
@@ -39,15 +39,16 @@ import time
 from pathlib import Path
 from time import gmtime, strftime
 
-import chime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.fft as tfft
+from desktop_notifier import DesktopNotifier
 
 from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
 from src.penrose import filterByRadius, makeSunGrid
 
+t1 = time.time()
 now = gmtime()
 day = strftime("%Y-%m-%d", now)
 timeofday = strftime("%H.%M", now)
@@ -182,14 +183,14 @@ penrose2 = filterByRadius(penrose0, 60)
 
 setupdict = {{
 #    "thin": thin,
-#    "thick": thick,
+    "thick": thick,
 #    "thinthin": thinthin,
 #    "thickthin": thickthin,
 #    "thickthick": thickthick,
 #    "thinthickthin": thinthickthin,
 #    "penrose0": penrose0,
 #    "penrose1": penrose1,
-    "penrose2": penrose2,
+#    "penrose2": penrose2,
 }}
 
 nR = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
@@ -253,9 +254,9 @@ for key in setupdict:
                         -{np.pi * hbar / dt},
                         {np.pi * hbar / dt}]}})
 
-chime.theme("sonic")
-chime.success()
 t2 = time.time()
+notifier = DesktopNotifier()
+n = notifier.send_sync(title="Done!", message=f"Simulation ran in {{t2 - t1:.2f}} seconds")
 """
 
 with open(".run.py", "w") as f:
