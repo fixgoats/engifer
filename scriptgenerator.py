@@ -42,7 +42,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.fft as tfft
-from desktop_notifier import DesktopNotifier
 
 from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
 from src.penrose import filterByRadius, makeSunGrid
