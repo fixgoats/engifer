@@ -7,28 +7,27 @@ constV = -0.5j * gammalp
 alpha = 0.0004
 G = 0.002
 R = 0.016
-pumpStrength = 26
-sigma = 2
+pumpStrength = 14
 dt = 0.05
 Gamma = 0.1
-eta = 1
+eta = 2
 dt = 0.05
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
-N = 64
-startX = -100
-endX = 100
+N = 1024
+startX = -150
+endX = 150
 dx = (endX - startX) / N
-prerun = 12000
+prerun = 8000
 nframes = 1024
-rhomblength0 = 24
-rhomblength1 = 10
-ndistances = 2
-dr = (rhomblength0 - rhomblength1) / ndistances
+rhomblength0 = 10
+rhomblength1 = 18
+ndistances = 16
+dr = (rhomblength1 - rhomblength0) / ndistances
 kmax = np.pi / dx
 dk = 2 * kmax / N
-sigmax = 1.2
-sigmay = 1.2
+sigmax = 2
+sigmay = 2
 
 a = f"""
 import math
@@ -48,6 +47,7 @@ import torch.fft as tfft
 from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
 from src.penrose import filterByRadius, makeSunGrid
 
+t1 = time.time()
 now = gmtime()
 day = strftime("%Y-%m-%d", now)
 timeofday = strftime("%H.%M", now)
@@ -66,7 +66,9 @@ params = {{
     "nframes": {nframes},
     "rhomblength0": {rhomblength0},
     "rhomblength1": {rhomblength1},
-    "ndistances": {ndistances}
+    "ndistances": {ndistances},
+    "sigmax": {sigmax},
+    "sigmay": {sigmay},
 }}
 
 
@@ -176,20 +178,23 @@ thinthickthin = np.array(
 
 thinthickthin -= np.mean(thinthickthin, axis=0)
 
-penrose0 = filterByRadius(makeSunGrid({rhomblength0 * goldenRatio**4}, 4), 160)
-penrose1 = filterByRadius(penrose0, 110)
-penrose2 = filterByRadius(penrose0, 60)
+penrose0 = makeSunGrid({rhomblength0 * goldenRatio**4}, 4)
+penrose1 = filterByRadius(penrose0, 50)
+penrose2 = filterByRadius(penrose0, 30)
+
+point = np.array([[10,0]])
 
 setupdict = {{
-#    "thin": thin,
-#    "thick": thick,
-#    "thinthin": thinthin,
-#    "thickthin": thickthin,
-#    "thickthick": thickthick,
-#    "thinthickthin": thinthickthin,
-#    "penrose0": penrose0,
-#    "penrose1": penrose1,
+    "thin": thin,
+    "thick": thick,
+    "thinthin": thinthin,
+    "thickthin": thickthin,
+    "thickthick": thickthick,
+    "thinthickthin": thinthickthin,
+    "penrose0": penrose0,
+    "penrose1": penrose1,
     "penrose2": penrose2,
+#    "point": point,
 }}
 
 nR = torch.zeros(({N}, {N}), device='cuda', dtype=torch.cfloat)
@@ -197,7 +202,7 @@ k = torch.arange({-kmax}, {kmax}, {dk}, device='cuda').type(dtype=torch.cfloat)
 k = tfft.fftshift(k)
 kxv, kyv = torch.meshgrid(k, k, indexing='xy')
 kTimeEvo = torch.exp(-0.5j * {hbar * dt / m} * (kxv * kxv + kyv * kyv))
-rhomblengths = torch.arange({rhomblength0}, {rhomblength1}, {-dr})
+rhomblengths = torch.arange({rhomblength0}, {rhomblength1}, {dr})
 for key in setupdict:
     bleh = np.zeros(({nframes}, {ndistances}))
     orgpoints = setupdict[key]
@@ -248,14 +253,15 @@ for key in setupdict:
     
     np.save(os.path.join(basedir, "spectra"), 
             {{"spectra": bleh,
-             "extent": [{rhomblength1},
-                        {rhomblength0},
+             "extent": [{rhomblength0},
+                        {rhomblength1},
                         -{np.pi * hbar / dt},
                         {np.pi * hbar / dt}]}})
 
 chime.theme("sonic")
 chime.success()
 t2 = time.time()
+print(f"finished in {{t2 - t1}} seconds")
 """
 
 with open(".run.py", "w") as f:
