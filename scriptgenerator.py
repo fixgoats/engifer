@@ -38,11 +38,11 @@ import time
 from pathlib import Path
 from time import gmtime, strftime
 
-import chime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.fft as tfft
+from desktop_notifier import DesktopNotifier
 
 from src.solvers import figBoilerplate, npnormSqr, imshowBoilerplate, smoothnoise, tgauss
 from src.penrose import filterByRadius, makeSunGrid
@@ -258,8 +258,6 @@ for key in setupdict:
                         -{np.pi * hbar / dt},
                         {np.pi * hbar / dt}]}})
 
-chime.theme("sonic")
-chime.success()
 t2 = time.time()
 print(f"finished in {{t2 - t1}} seconds")
 """

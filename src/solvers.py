@@ -1,12 +1,11 @@
 # Classes to time evolve initial condition according to the Schrödinger equation
+
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.sparse as sps
 import torch
 import torch.fft as tfft
 from numba import complex128, float64, vectorize
-from scipy.fft import fft, fft2, fftshift, ifft, ifft2
-from scipy.linalg import expm
+from scipy.fft import fft2, fftshift, ifft2
 from scipy.signal import convolve2d
 
 hbar = 6.582119569e-1  # meV * ps
