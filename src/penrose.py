@@ -2,7 +2,6 @@ import cmath
 import math
 
 import numpy as np
-from numba import float64, njit
 
 goldenRatio = (1 + math.sqrt(5)) / 2
 
@@ -71,20 +70,5 @@ def filterByRadius(points, cutoff):
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    grid1 = makeSunGrid(5 * goldenRatio**4, 4)
-    # grid2 = makeSunGrid(5, 3)
-    # grid3 = makeSunGrid(5, 2)
-    # grid4 = makeSunGrid(5, 1)
-    # grid5 = makeSunGrid(5, 0)
-    ax.set_aspect("equal")
-    ax.scatter(grid1[:, 0], grid1[:, 1], color="r")
-    p = grid1[np.all(abs(grid1) < 0.1, axis=1)]
-    # ax.scatter(grid2[:, 0], grid2[:, 1], color='g')
-    # ax.scatter(grid1[:, 0], grid1[:, 1], color='b')
-    # ax.scatter(grid4[:, 0], grid4[:, 1], color='orange')
-    # ax.scatter(grid5[:, 0], grid5[:, 1], color='m')
-    plt.show()
-    plt.close()
+    grid1 = filterByRadius(makeSunGrid(13.2 * goldenRatio**4, 4), 60)
+    print(np.shape(grid1))

@@ -7,7 +7,7 @@ constV = -0.5j * gammalp
 alpha = 0.0004
 G = 0.002
 R = 0.016
-pumpStrength = 45
+pumpStrength = 24
 dt = 0.05
 Gamma = 0.1
 eta = 2
@@ -18,7 +18,7 @@ N = 512
 startX = -150
 endX = 150
 dx = (endX - startX) / N
-prerun = 8000
+prerun = 6000
 nframes = 1024
 rhomblength0 = 10
 rhomblength1 = 18
@@ -26,8 +26,8 @@ ndistances = 16
 dr = (rhomblength1 - rhomblength0) / ndistances
 kmax = np.pi / dx
 dk = 2 * kmax / N
-sigmax = 1.2
-sigmay = 1.2
+sigmax = 1.8
+sigmay = 1.8
 
 a = f"""
 import math
@@ -59,6 +59,7 @@ params = {{
     "eta": {eta},
     "m": {m},
     "N": {N},
+    "pumpStrength": {pumpStrength},
     "startX": {startX},
     "endX": {endX},
     "prerun": {prerun},
@@ -184,15 +185,15 @@ penrose2 = filterByRadius(penrose0, 30)
 point = np.array([[10,0]])
 
 setupdict = {{
-#    "thin": thin,
+    "thin": thin,
     "thick": thick,
-#    "thinthin": thinthin,
-#    "thickthin": thickthin,
-#    "thickthick": thickthick,
-#    "thinthickthin": thinthickthin,
-#    "penrose0": penrose0,
-#    "penrose1": penrose1,
-#    "penrose2": penrose2,
+    "thinthin": thinthin,
+    "thickthin": thickthin,
+    "thickthick": thickthick,
+    "thinthickthin": thinthickthin,
+    "penrose0": penrose0,
+    "penrose1": penrose1,
+    "penrose2": penrose2,
 #    "point": point,
 }}
 
@@ -203,6 +204,7 @@ kxv, kyv = torch.meshgrid(k, k, indexing='xy')
 kTimeEvo = torch.exp(-0.5j * {hbar * dt / m} * (kxv * kxv + kyv * kyv))
 rhomblengths = torch.arange({rhomblength0}, {rhomblength1}, {dr})
 for key in setupdict:
+    print(f"doing (uhuh, huhuhu) {{key}}")
     bleh = np.zeros(({nframes}, {ndistances}))
     orgpoints = setupdict[key]
     basedir = os.path.join("graphs", key, day, timeofday)

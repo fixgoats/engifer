@@ -9,10 +9,8 @@ import chime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from matplotlib import animation
-from numpy.fft import fft, fftshift, ifft
+from numpy.fft import fftshift
 from numpy.linalg import norm
-from scipy.signal import convolve2d
 from torch.profiler import ProfilerActivity, profile, record_function
 
 from src.penrose import filterByRadius, goldenRatio, makeSunGrid

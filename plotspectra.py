@@ -1,5 +1,6 @@
 import os
 from argparse import ArgumentParser
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -47,14 +48,14 @@ if args.set is not None:
             os.path.join("graphs", name, args.set, "spectra.npy"), allow_pickle=True
         ).item()["spectra"]
         starty = int(np.shape(spectra[name])[0] * 0.5)
-        endy = int(np.shape(spectra[name])[0] * 0.52)
+        endy = int(np.shape(spectra[name])[0] * 0.55)
         spectra[name] = spectra[name][starty:endy, :]
 
     extent = np.load(
         os.path.join("graphs/thick", args.set, "spectra.npy"), allow_pickle=True
     ).item()["extent"]
     extent[2] = 0
-    extent[3] /= 25
+    extent[3] /= 10
     fig, ax = plt.subplots(nrows=len(setups), sharex=True)
     fig.set_size_inches(w=6.4, h=16)
     axes = {}
@@ -75,4 +76,6 @@ if args.set is not None:
     cbar_ax = fig.add_axes([0.90, 0.02, 0.03, 0.96])
     # axes["penrose2"].set_xlim(xmin=extent[0], xmax=extent[1])
     fig.colorbar(ims["thick"], cax=cbar_ax)
-    fig.savefig("uhh.pdf")
+    basedir = os.path.join("graphs", args.set)
+    Path(basedir).mkdir(parents=True, exist_ok=True)
+    fig.savefig(os.path.join(basedir, "uhh.pdf"))
