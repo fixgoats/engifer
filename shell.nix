@@ -6,6 +6,7 @@ pkgs.mkShell {
       matplotlib
       scipy
       torch-bin
+      cupy
       desktop-notifier
       numba
       z3

@@ -12,3 +12,4 @@ graphs/
 tmp/
 research/
 .run.py
+.rope*

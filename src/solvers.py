@@ -52,9 +52,8 @@ def tnormSqr(x):
 
 # Create a somewhat more realistic initial condition than white noise
 def smoothnoise(xv, yv):
-    random = np.random.uniform(-1, 1, np.shape(xv)) + 1j * np.random.uniform(
-        -1, 1, np.shape(xv)
-    )
+    rng = np.random.default_rng()
+    random = rng.uniform(-1, 1, np.shape(xv)) + 1j * rng.uniform(-1, 1, np.shape(xv))
     krange = np.linspace(-2, 2, num=21)
     kbasex, kbasey = np.meshgrid(krange, krange)
     kernel = gauss(kbasex, kbasey)
@@ -131,6 +130,14 @@ class PeriodicSim:
 
 
 class SsfmGPGPU:
+    """
+    A class for solving the Gross-Pitaevskii equation in 2D using the split step
+    Fourier method. This class relies on PyTorch since it has a relatively
+    comfortable interface for GPU computing and a big development team with major
+    backers behind it. For this specific application, though, something like
+    CuPy might be more optimal and have fewer unused features.
+    """
+
     __slots__ = (
         "dev",
         "psi",
