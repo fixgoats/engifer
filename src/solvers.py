@@ -1,4 +1,5 @@
 # Classes to time evolve initial condition according to the Schrödinger equation
+import math
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -44,12 +45,6 @@ def npnormSqr(x):
     return x.real * x.real + x.imag * x.imag
 
 
-# For use with torch. This case doesn't benefit from jit and such and
-# the conj version is just as fast as the expanded version
-def tnormSqr(x):
-    return x.conj() * x
-
-
 # Create a somewhat more realistic initial condition than white noise
 def smoothnoise(xv, yv):
     rng = np.random.default_rng()
@@ -63,12 +58,12 @@ def smoothnoise(xv, yv):
     return output / np.sqrt(np.sum(npnormSqr(output)))
 
 
-def gauss(x, y, sigmax=1, sigmay=1):
-    return np.exp(-((x / sigmax) ** 2) - (y / sigmay) ** 2)
+def gauss(x, y, sigmax=1.0, sigmay=1.0):
+    return np.exp(-0.5 * ((x / sigmax) ** 2) - (y / sigmay) ** 2)
 
 
-def tgauss(x, y, sigmax=1, sigmay=1):
-    return torch.exp(-((x / sigmax) ** 2) - (y / sigmay) ** 2)
+def tgauss(x, y, sigmax=1.0, sigmay=1.0):
+    return torch.exp(0.5 * (-((x / sigmax) ** 2) - (y / sigmay) ** 2))
 
 
 class PeriodicSim:
@@ -265,3 +260,125 @@ class SsfmGPGPU:
             )
             / self.n
         )
+
+
+# for use with torch. Although jit-ing this function apparently doesn't really improve performance,
+# it doesn't hurt it either.
+@torch.jit.script
+def tnormSqr(x):
+    return x.conj() * x
+
+
+# Doesn't run faster than tnormSqr most of the time, but should be able to avoid a
+# type conversion and save memory if the tensor is being saved.
+@torch.jit.script
+def tnormSqrReal(x):
+    return x.real * x.real + x.imag * x.imag
+
+
+# It would be faster if the constants were hardcoded into the function, but this
+# isn't much slower.
+@torch.jit.script
+def V(psi, nR, constPart, alpha: float, G: float, R: float):
+    return constPart + alpha * tnormSqr(psi) + (G + 0.5j * R) * nR
+
+
+@torch.jit.script
+def halfRTimeEvo(psi, nR, constPart, dt: float, alpha: float, G: float, R: float):
+    return torch.exp(-0.5j * dt * V(psi, nR, constPart, alpha, G, R))
+
+
+@torch.jit.script
+def halfStepNR(psi, nR, pump, dt: float, Gamma: float, R: float):
+    return (
+        math.exp(-0.5 * dt * Gamma) * torch.exp((-0.5 * dt * R) * tnormSqr(psi)) * nR
+        + pump * dt * 0.5
+    )
+
+
+@torch.jit.script
+def stepNR(psi, nR, pump, dt: float, R: float, Gamma: float):
+    return math.exp(-dt * Gamma) * torch.exp((-dt * R) * tnormSqr(psi)) * nR + pump * dt
+
+
+@torch.jit.script
+def step(
+    psi0,
+    nR0,
+    kTimeEvo,
+    constPart,
+    pump,
+    dt: float,
+    alpha: float,
+    G: float,
+    R: float,
+    Gamma: float,
+):
+    rTimeEvo = halfRTimeEvo(psi0, nR0, constPart, dt, alpha, G, R)
+    psi = psi0 * rTimeEvo
+    psi = tfft.ifft2(kTimeEvo * tfft.fft2(psi))
+    psi = psi * rTimeEvo
+    nR = stepNR(psi, nR0, pump, dt, R, Gamma)
+    return psi, nR
+
+
+@torch.jit.script
+def runSim(
+    psi,
+    nR,
+    kTimeEvo,
+    constPart,
+    pump,
+    dt: float,
+    alpha: float,
+    G: float,
+    R: float,
+    Gamma: float,
+    npolars,
+    spectrum,
+    prerun: int,
+    nframes: int,
+):
+    for i in range(prerun):
+        psi, nR = step(psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma)
+        if i % 20 == 0:
+            npolars[i // 20] = torch.sum(tnormSqr(psi).real)
+    for i in range(nframes):
+        psi, nR = step(psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma)
+        if (prerun + i) % 20 == 0:
+            npolars[(prerun + i) // 20] = torch.sum(tnormSqr(psi).real)
+        # spectrum[i] = torch.sum(psi)
+    return psi, nR
+
+
+@torch.jit.script
+def runSimAnimate(
+    psi,
+    nR,
+    kTimeEvo,
+    constPart,
+    pump,
+    dt: float,
+    alpha: float,
+    G: float,
+    R: float,
+    Gamma: float,
+    npolars,
+    spectrum,
+    prerun: int,
+    nframes: int,
+    recordInterval: int,
+    animationFeed,
+):
+    for i in range(prerun):
+        psi, nR = step(psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma)
+        npolars[i] = torch.sum(tnormSqr(psi).real)
+        if i % recordInterval == 0:
+            animationFeed[:, :, i // recordInterval] = tnormSqrReal(psi)
+    for i in range(nframes):
+        psi, nR = step(psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma)
+        npolars[prerun + i] = torch.sum(tnormSqr(psi).real)
+        spectrum[i] = torch.sum(psi)
+        if i + prerun % recordInterval == 0:
+            animationFeed[:, :, (i + prerun) // recordInterval] = tnormSqrReal(psi)
+    return psi, nR

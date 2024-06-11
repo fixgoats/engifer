@@ -8,11 +8,7 @@ parser.add_argument("--file")
 parser.add_argument("--out")
 args = parser.parse_args()
 
-npolars = np.load(args.file, allow_pickle=True)
+npolars = np.load(args.file)
 fig, ax = plt.subplots()
 ax.plot(npolars)
-if args.out is None:
-    plt.show()
-
-else:
-    fig.savefig(args.out)
+fig.savefig(args.out)
