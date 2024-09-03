@@ -323,6 +323,67 @@ def step(
 
 
 @torch.jit.script
+def f(psi, nR, pump, R: float, Gamma: float):
+    return -(Gamma + R * tnormSqrReal(psi)) * nR + pump
+
+
+@torch.jit.script
+def lerp(a, b, t: float):
+    return a * (1 - t) + t * b
+
+
+@torch.jit.script
+def RK4step(psi0, psi, nR, pump, dt: float, R: float, Gamma: float):
+    k1 = f(psi0, nR, pump, R, Gamma)
+    k2 = f(lerp(psi0, psi, 0.5), nR + 0.5 * dt * k1, pump, R, Gamma)
+    k3 = f(lerp(psi0, psi, 0.5), nR + 0.5 * dt * k2, pump, R, Gamma)
+    k4 = f(psi, nR + dt * k3, pump, R, Gamma)
+    return nR + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+
+
+@torch.jit.script
+def stepWithRK4(
+    psi0,
+    nR0,
+    kTimeEvo,
+    constPart,
+    pump,
+    dt: float,
+    alpha: float,
+    G: float,
+    R: float,
+    Gamma: float,
+):
+    rTimeEvo = halfRTimeEvo(psi0, nR0, constPart, dt, alpha, G, R)
+    psi = psi0 * rTimeEvo
+    psi = tfft.ifft2(kTimeEvo * tfft.fft2(psi))
+    psi = psi * rTimeEvo
+    nR = RK4step(psi0, psi, nR0, pump, dt, R, Gamma)
+    return psi, nR
+
+
+@torch.jit.script
+def runSimPlain(
+    psi,
+    nR,
+    kTimeEvo,
+    constPart,
+    pump,
+    dt: float,
+    alpha: float,
+    G: float,
+    R: float,
+    Gamma: float,
+    prerun: int,
+):
+    for _ in range(prerun):
+        psi, nR = stepWithRK4(
+            psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma
+        )
+    return psi, nR
+
+
+@torch.jit.script
 def runSim(
     psi,
     nR,
