@@ -1,7 +1,6 @@
 import os
-from argparse import ArgumentParser, BooleanOptionalAction
+from argparse import ArgumentParser
 
-import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 

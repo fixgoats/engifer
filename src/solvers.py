@@ -395,20 +395,23 @@ def runSim(
     G: float,
     R: float,
     Gamma: float,
-    npolars,
+    nPolars,
+    nExcitons,
     spectrum,
     prerun: int,
-    nframes: int,
+    spectrumSamples: int,
+    nPolarSamples: int,
+    sampleSpacing: int,
 ):
-    for i in range(prerun):
-        psi, nR = step(psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma)
-        if i % 20 == 0:
-            npolars[i // 20] = torch.sum(tnormSqr(psi).real)
-    for i in range(nframes):
-        psi, nR = step(psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma)
-        if (prerun + i) % 20 == 0:
-            npolars[(prerun + i) // 20] = torch.sum(tnormSqr(psi).real)
-        # spectrum[i] = torch.sum(psi)
+    for i in range(nPolarSamples):
+        for _ in range(sampleSpacing):
+            psi, nR = stepWithRK4(
+                psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma
+            )
+        nPolars[i] = torch.sum(tnormSqrReal(psi))
+        nExcitons[i] = torch.sum(nR)
+        if i >= prerun:
+            spectrum[i - prerun] = torch.sum(psi)
     return psi, nR
 
 

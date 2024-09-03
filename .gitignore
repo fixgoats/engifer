@@ -6,6 +6,7 @@ torchtest.py
 .idea
 animations/
 graphs/
+data/
 *.pkl
 *.npy
 *.zip
