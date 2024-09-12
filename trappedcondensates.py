@@ -9,16 +9,22 @@ import torch.fft as tfft
 
 from src.solvers import hbar, runSim
 
-pumpStrengths = np.arange(15, 24, 7000)
-rs = np.linspace(5, 8, 1)
-for p in pumpStrengths:
-    for r in rs:
-        now = gmtime()
-        day = strftime("%Y-%m-%d", now)
-        timeofday = strftime("%H.%M", now)
-        basedir = os.path.join("data/trap", day, timeofday)
-        Path(basedir).mkdir(parents=True, exist_ok=True)
+pumpStrengths = np.linspace(9, 14, 3)
+rs = np.linspace(4.5, 5.5, 2)
+now = gmtime()
+day = strftime("%Y-%m-%d", now)
+timeofday = strftime("%H.%M", now)
+basedir = os.path.join("data/trap", day, timeofday)
+Path(basedir).mkdir(parents=True, exist_ok=True)
 
+for r in rs:
+    for p in pumpStrengths:
+        seed = 2001124
+        # seed = None
+        if seed is not None:
+            gen = torch.random.manual_seed(seed=seed)
+        else:
+            gen = torch.Generator()
         gammalp = 0.2
         constV = -0.5j * gammalp
         alpha = 0.0004
@@ -46,14 +52,12 @@ for p in pumpStrengths:
 
         kmax = np.pi / dx
         dk = 2 * kmax / nElementsX
-        beta0 = 1.05
+        beta0 = 1.00
         L0 = 2.2
         r0 = r
-        seed = 2001124
-        # seed = None
 
         def pumpprofile(x, y, L, r, beta):
-            return (L * L) ** 2 / ((x**2 + beta * y**2 - r**2) ** 2 + L**4)
+            return (L * L) ** 2 / ((x**2 + beta * y**2 - r**2) ** 2 + (L * L) ** 2)
 
         t1 = time.time()
         nR = torch.zeros((nElementsX, nElementsX), device="cuda", dtype=torch.float)
@@ -65,13 +69,12 @@ for p in pumpStrengths:
         xv, yv = torch.meshgrid(x, x, indexing="xy")
         xv = xv.type(dtype=torch.cfloat).to(device="cuda")
         yv = yv.type(dtype=torch.cfloat).to(device="cuda")
-        gen = torch.random.manual_seed(seed=seed)
         psi = 2 * torch.rand(
             (nElementsX, nElementsX), generator=gen, dtype=torch.cfloat
-        ).to(dev10ice="cuda") - (1 + 1j)
-        pump1 = pumpStrength * pumpprofile(xv - 15, yv, L0, r0, beta0)
-        pump2 = pumpStrength * pumpprofile(xv + 15, yv, L0, r0, beta0)
-        pump = pump1 + pump2
+        ).to(device="cuda") - (1 + 1j)
+        pump1 = pumpStrength * pumpprofile(xv - 13, yv, L0, r0, beta0)
+        pump2 = pumpStrength * pumpprofile(xv + 13, yv, L0, r0, beta0)
+        pump = (pump1 + pump2).real
         constpart = constV + (G * eta / Gamma) * pump
 
         nPolars = torch.zeros((nPolarSamples), dtype=torch.float, device="cuda")

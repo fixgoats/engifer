@@ -4,11 +4,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 parser = ArgumentParser()
-parser.add_argument("--file")
-parser.add_argument("--out")
+parser.add_argument("file")
+parser.add_argument("out")
 args = parser.parse_args()
 
-npolars = np.load(args.file)
+a = np.load(args.file)
+npolars = a["nPolars"]
 fig, ax = plt.subplots()
 ax.plot(npolars)
 fig.savefig(args.out)

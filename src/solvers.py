@@ -446,3 +446,36 @@ def runSimAnimate(
         if i + prerun % recordInterval == 0:
             animationFeed[:, :, (i + prerun) // recordInterval] = tnormSqrReal(psi)
     return psi, nR
+
+
+@torch.jit.script
+def newRunSimAnimate(
+    psi,
+    nR,
+    kTimeEvo,
+    constPart,
+    pump,
+    dt: float,
+    alpha: float,
+    G: float,
+    R: float,
+    Gamma: float,
+    # nPolars,
+    # nExcitons,
+    # spectrum,
+    # prerun: int,
+    nPolarSamples: int,
+    sampleSpacing: int,
+    animationFeed,
+):
+    for i in range(nPolarSamples):
+        for _ in range(sampleSpacing):
+            psi, nR = stepWithRK4(
+                psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma
+            )
+        # nPolars[i] = torch.sum(tnormSqrReal(psi))
+        # nExcitons[i] = torch.sum(nR)
+        animationFeed[:, :, i] = tnormSqrReal(psi)
+        # if i >= prerun:
+        #     spectrum[i - prerun] = torch.sum(psi)
+    return psi, nR

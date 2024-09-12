@@ -7,8 +7,8 @@ import numpy as np
 from src.solvers import npnormSqr
 
 parser = ArgumentParser()
-parser.add_argument("--file")
-parser.add_argument("--out")
+parser.add_argument("file")
+parser.add_argument("out")
 args = parser.parse_args()
 
 plots = []
