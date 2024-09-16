@@ -475,7 +475,7 @@ def newRunSimAnimate(
             )
         # nPolars[i] = torch.sum(tnormSqrReal(psi))
         # nExcitons[i] = torch.sum(nR)
-        animationFeed[:, :, i] = tnormSqrReal(psi)
+        animationFeed[:, :, i] = psi
         # if i >= prerun:
         #     spectrum[i - prerun] = torch.sum(psi)
     return psi, nR

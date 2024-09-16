@@ -9,7 +9,7 @@ import torch
 import torch.fft as tfft
 from matplotlib import animation, cm
 
-from src.solvers import hbar, newRunSimAnimate
+from src.solvers import hbar, newRunSimAnimate, npnormSqr
 
 plt.rcParams["animation.ffmpeg_path"] = "/usr/bin/ffmpeg"
 
@@ -35,7 +35,7 @@ nPolarSamples = int(recordingTime * fps / (nds - 1))
 initSamples = initTime * fps
 nElementsX = 512
 dt = 0.1
-sampleSpacing = 150
+sampleSpacing = 180
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
 startX = -64
@@ -46,15 +46,19 @@ kmax = np.pi / dx
 dk = 2 * kmax / nElementsX
 L0 = 2.2
 r0 = 5.1
-seed = 2001124
-# seed = None
+# seed = 2001124
+seed = None
+if seed is not None:
+    gen = torch.random.manual_seed(seed=seed)
+else:
+    gen = torch.Generator()
 
 
 def pumpprofile(x, y, L, r, beta):
     return (L * L) ** 2 / ((x**2 + beta * y**2 - r**2) ** 2 + (L * L) ** 2)
 
 
-beta = 0.999
+beta = 1.0
 t1 = time.time()
 nR = torch.zeros((nElementsX, nElementsX), device="cuda", dtype=torch.float)
 k = torch.arange(-kmax, kmax, dk, device="cuda").type(dtype=torch.cfloat)
@@ -65,7 +69,6 @@ x = torch.arange(startX, endX, dx)
 xv, yv = torch.meshgrid(x, x, indexing="xy")
 xv = xv.type(dtype=torch.cfloat).to(device="cuda")
 yv = yv.type(dtype=torch.cfloat).to(device="cuda")
-gen = torch.random.manual_seed(seed=seed)
 psi = 2 * torch.rand((nElementsX, nElementsX), generator=gen, dtype=torch.cfloat).to(
     device="cuda"
 ) - (1 + 1j)
@@ -79,13 +82,13 @@ animationFeed = torch.zeros(
     device="cuda",
 )
 
-ds = np.linspace(12.2, 16.2, nds)
-for i, d in enumerate(ds):
+ps = np.linspace(8.6, 10.2, nds)
+for i, p in enumerate(ps):
     pump = (
-        pumpStrength
+        p
         * (
-            pumpprofile(xv - d, yv, L0, r0, beta)
-            + pumpprofile(xv + d, yv, L0, r0, beta)
+            pumpprofile(xv - 14.11, yv, L0, r0, beta)
+            + pumpprofile(xv + 14.11, yv, L0, r0, beta)
         ).real
     )
     constpart = constV + (G * eta / Gamma) * pump
@@ -131,13 +134,54 @@ for i, d in enumerate(ds):
             animationFeed[:, :, initSamples + (i - 1) * nPolarSamples :],
         )
 
+animationFeed = animationFeed.detach().cpu().numpy()
+filter_array = npnormSqr(animationFeed) > 1e-7
+animationFeed *= filter_array
+np.savez_compressed("animationarray", animationFeed)
 fig, ax = plt.subplots()
 fig.set_dpi(150)
 fig.set_figwidth(8)
 fig.set_figheight(8)
-animationFeed = animationFeed.detach().cpu().numpy()
+
 im = ax.imshow(
     animationFeed[:, :, 0],
+    interpolation="none",
+    origin="lower",
+    extent=[startX, endX, startX, endX],
+    aspect="equal",
+)
+cb = plt.colorbar(im)
+
+
+def init1():
+    return [im]
+
+
+def animate_heatmap1(frame):
+    data = animationFeed[:, :, frame]
+    im.set_data(data)
+    im.set_clim(np.min(data), np.max(data))
+    return [im]
+
+
+anim = animation.FuncAnimation(
+    fig,
+    animate_heatmap1,
+    init_func=init1,
+    frames=(recordingTime + initTime) * fps,
+    blit=True,
+)
+FFwriter = animation.FFMpegWriter(fps=fps, metadata={"copyright": "Public Domain"})
+
+anim.save(f"pumpscan.mp4", writer=FFwriter)
+
+fig, ax = plt.subplots()
+fig.set_dpi(150)
+fig.set_figwidth(8)
+fig.set_figheight(8)
+
+im = ax.imshow(
+    np.angle(animationFeed[:, :, 0]),
     interpolation="none",
     origin="lower",
     extent=[startX, endX, startX, endX],
@@ -151,9 +195,9 @@ def init():
 
 
 def animate_heatmap(frame):
-    data = animationFeed[:, :, frame]
+    data = np.angle(animationFeed[:, :, frame])
     im.set_data(data)
-    im.set_clim(np.min(data), np.max(data))
+    # im.set_clim(np.min(data), np.max(data))
     return [im]
 
 
@@ -166,7 +210,6 @@ anim = animation.FuncAnimation(
 )
 FFwriter = animation.FFMpegWriter(fps=fps, metadata={"copyright": "Public Domain"})
 
-anim.save(f"longtrapevolution.mp4", writer=FFwriter)
-
+anim.save(f"pumpscanphase.mp4", writer=FFwriter)
 t2 = time.time()
 print(f"Finished in {t2 - t1} seconds")
