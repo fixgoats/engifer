@@ -460,22 +460,21 @@ def newRunSimAnimate(
     G: float,
     R: float,
     Gamma: float,
-    # nPolars,
-    # nExcitons,
-    # spectrum,
-    # prerun: int,
-    nPolarSamples: int,
-    sampleSpacing: int,
-    animationFeed,
+    prerun: int,
+    nFrames: int,
+    frameSpacing: int,
+    psiFeed,
+    excitonFeed,
 ):
-    for i in range(nPolarSamples):
-        for _ in range(sampleSpacing):
+    for i in range(prerun):
+        psi, nR = stepWithRK4(
+            psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma
+        )
+    for i in range(nFrames):
+        for _ in range(frameSpacing):
             psi, nR = stepWithRK4(
                 psi, nR, kTimeEvo, constPart, pump, dt, alpha, G, R, Gamma
             )
-        # nPolars[i] = torch.sum(tnormSqrReal(psi))
-        # nExcitons[i] = torch.sum(nR)
-        animationFeed[:, :, i] = psi
-        # if i >= prerun:
-        #     spectrum[i - prerun] = torch.sum(psi)
+        psiFeed[:, :, i] = psi
+        excitonFeed[:, :, i] = nR
     return psi, nR

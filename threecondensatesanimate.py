@@ -24,7 +24,7 @@ constV = -0.5j * gammalp
 alpha = 0.0004
 G = 0.002
 R = 0.016
-pumpStrength = 9.2
+pumpStrength = 9.0
 Gamma = 0.1
 eta = 2
 initTime = 8
@@ -78,6 +78,11 @@ animationFeed = torch.zeros(
     dtype=torch.cfloat,
     device="cuda",
 )
+excitonFeed = torch.zeros(
+    (nElementsX, nElementsX, (recordingTime + initTime) * fps),
+    dtype=torch.float,
+    device="cuda",
+)
 
 ds = np.linspace(12.2, 16.0, nds)
 for i, d in enumerate(ds):
@@ -121,13 +126,10 @@ for i, d in enumerate(ds):
             G,
             R,
             Gamma,
-            # nPolars,
-            # nExcitons,
-            # spectrum,
-            # 0,
             initSamples,
             sampleSpacing,
             animationFeed,
+            excitonFeed,
         )
     else:
         psi, nR = newRunSimAnimate(
@@ -141,13 +143,10 @@ for i, d in enumerate(ds):
             G,
             R,
             Gamma,
-            # nPolars,
-            # nExcitons,
-            # spectrum,
-            # 0,
             nPolarSamples,
             sampleSpacing,
             animationFeed[:, :, initSamples + (i - 1) * nPolarSamples :],
+            excitonFeed[:, :, initSamples + (i - 1) * nPolarSamples :],
         )
 
 fig, ax = plt.subplots()
@@ -155,6 +154,9 @@ fig.set_dpi(150)
 fig.set_figwidth(8)
 fig.set_figheight(8)
 animationFeed = animationFeed.detach().cpu().numpy()
+np.savez(
+    os.path.join(basedir, "threetraps"), psiFeed=animationFeed, excitonFeed=excitonFeed
+)
 im = ax.imshow(
     npnormSqr(animationFeed[:, :, 0]),
     interpolation="none",
