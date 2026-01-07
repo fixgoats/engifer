@@ -9,9 +9,16 @@ graphs/
 data/
 *.pkl
 *.npy
+*.npz
 *.zip
+*.csv
 tmp/
 research/
 .run.py
 .rope*
-.npz
+*.pdf
+*.mp4
+shell.drv/
+results/
+homegraphs/
+laptopgraphs/

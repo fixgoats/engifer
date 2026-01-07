@@ -1,5 +1,0 @@
-ruff>=0.4.8
-python-lsp-server>=1.11
-PyQt6>=6.7
-PyQt5>=5.15
-ipython>=8.26

@@ -7,8 +7,9 @@ import z3
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 
-grid_size = 21
+grid_size = 4
 x, y = np.mgrid[-2:grid_size - 2, -2:grid_size - 2]
 hexagon_centers = x + .5 * y + 1j * np.sqrt(3) / 2 * y
 six_rotations = np.exp(1j * (np.pi /3 * np.arange(6)))
@@ -26,6 +27,7 @@ indices = [
     ]
 hat = kites[indices[0], indices[1], indices[2], :]
 
+t1 = time.time()
 hats = hat[None, :, :] * six_rotations[:, None, None]
 hats = np.concatenate([hats, np.real(hats) - 1j * np.imag(hats)])
 hats = hats[None, None, :, :, :] + hexagon_centers[:, :, None, None, None]
@@ -48,6 +50,10 @@ def atmostone(solver, bools):
       if i > j:
         solver.add(z3.Not(z3.And(b1, b2)))
 hat_present = [z3.Bool(f"hat{i}") for i in range(len(hats))]
+t2 = time.time()
+print(f"Time to do this stuff: {t2 - t1}")
+
+t1 = time.time()
 s = z3.Solver()
 for p in all_points:
   atmostone(s, [hat_present[i] for i in hats_with_point[p]])
@@ -67,8 +73,13 @@ outlines = outlines[None, None, :, :, :] + hexagon_centers[:, :, None, None, Non
 outlines = np.reshape(outlines, (-1, len(outline), 2))
 result = outlines[np.array(chosen_hats), :]
 result = result.reshape(-1, 2)
+t2 = time.time()
+print(f"Time to do the other stuff: {t2 - t1}")
 plt.figure(figsize=(10, 10))
 
+plt.plot(result.imag.transpose(), result.real.transpose(), c=[0, 0, 0])
+plt.gca().set_aspect("equal")
+plt.show()
 
 def npModSqr(x):
     return x.real * x.real + x.imag * x.imag

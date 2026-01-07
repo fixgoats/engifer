@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.fft as tfft
-from matplotlib import animation, cm
+from matplotlib import animation
 
 from src.solvers import hbar, newRunSimAnimate, npnormSqr, runSimPlain
 
@@ -24,17 +24,15 @@ constV = -0.5j * gammalp
 alpha = 0.0004
 G = 0.002
 R = 0.016
-pumpStrength = 26.4
+pumpStrength = 9
 Gamma = 0.1
-eta = 2
-initTime = 8
-recordingTime = 10
+eta = 1
 fps = 24
 nds = 21
 prerun = 4000
-nFrames = 240
+nFrames = 480
 framesPerD = nFrames // nds
-nElementsX = 256
+nElementsX = 512
 dt = 0.1
 hbar = 6.582119569e-1  # meV * ps
 m = 0.32
@@ -44,8 +42,8 @@ dx = (endX - startX) / nElementsX
 
 kmax = np.pi / dx
 dk = 2 * kmax / nElementsX
-L0 = 1.1
-r0 = 3.9
+L0 = 2.0
+r0 = 5.0
 # seed = 2001124
 seed = None
 if seed is not None:
@@ -104,8 +102,11 @@ psi, nR = runSimPlain(
     prerun,
 )
 
-ds = np.linspace(5.1, 6, nds)
+ds = np.linspace(17 / 2, 20 / 2, nds)
 for i, d in enumerate(ds):
+    print(i)
+    print(d)
+    print(i * framesPerD)
     pump = (
         pumpStrength
         * (
@@ -128,7 +129,7 @@ for i, d in enumerate(ds):
         Gamma,
         0,
         framesPerD,
-        12,
+        30,
         psiFeed[:, :, i * framesPerD :],
         excitonFeed[:, :, i * framesPerD :],
     )
@@ -172,7 +173,7 @@ anim = animation.FuncAnimation(
 )
 FFwriter = animation.FFMpegWriter(fps=fps, metadata={"copyright": "Public Domain"})
 
-anim.save(f"coarsepumpscan.mp4", writer=FFwriter)
+anim.save("coarsepumpscan.mp4", writer=FFwriter)
 
 fig, ax = plt.subplots()
 fig.set_dpi(150)
@@ -209,6 +210,6 @@ anim = animation.FuncAnimation(
 )
 FFwriter = animation.FFMpegWriter(fps=fps, metadata={"copyright": "Public Domain"})
 
-anim.save(f"lesssep.mp4", writer=FFwriter)
+anim.save("lesssep.mp4", writer=FFwriter)
 t2 = time.time()
 print(f"Finished in {t2 - t1} seconds")
